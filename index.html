@@ -1,212 +1,336 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
-    <style> body { margin: 0; background: #000; touch-action: none; overflow: hidden; } </style>
+    <style>
+        body { margin: 0; background: #222; font-family: 'Arial', sans-serif; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+        
+        /* 遊戲容器 */
+        #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+
+        /* UI 控制層 (浮在 Canvas 上) */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
+        
+        /* 按鈕共用樣式 */
+        .btn {
+            position: absolute; background: rgba(255, 255, 255, 0.2); border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 10px; pointer-events: auto; touch-action: none;
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: bold; font-size: 24px; user-select: none;
+        }
+        .btn:active { background: rgba(255, 255, 255, 0.5); }
+
+        /* 左側十字鍵佈局 */
+        #dpad { position: absolute; bottom: 20px; left: 20px; width: 150px; height: 150px; }
+        #btn-up { top: 0; left: 50px; width: 50px; height: 50px; }
+        #btn-down { bottom: 0; left: 50px; width: 50px; height: 50px; }
+        #btn-left { top: 50px; left: 0; width: 50px; height: 50px; }
+        #btn-right { top: 50px; right: 0; width: 50px; height: 50px; }
+
+        /* 右側開火鍵 */
+        #btn-fire { 
+            position: absolute; bottom: 40px; right: 40px; 
+            width: 80px; height: 80px; border-radius: 50%; 
+            background: rgba(255, 0, 0, 0.3); border-color: rgba(255, 0, 0, 0.6);
+        }
+        #btn-fire:active { background: rgba(255, 0, 0, 0.6); }
+
+        /* HUD 文字容器 */
+        #hud { position: absolute; top: 10px; left: 10px; color: white; text-shadow: 1px 1px 2px black; pointer-events: none; }
+    </style>
 </head>
 <body>
+    <div id="game-container"></div>
+
+    <div id="ui-layer">
+        <div id="hud">
+            <div id="hud-ammo">Ammo: 0</div>
+            <div id="hud-score">Score: 0</div>
+            <div id="hud-time">Time: 60</div>
+        </div>
+
+        <div id="dpad">
+            <div id="btn-up" class="btn">↑</div>
+            <div id="btn-down" class="btn">↓</div>
+            <div id="btn-left" class="btn">←</div>
+            <div id="btn-right" class="btn">→</div>
+        </div>
+
+        <div id="btn-fire" class="btn">FIRE</div>
+    </div>
+
     <script>
         class MyGame extends Phaser.Scene {
             constructor() {
-                super('MyGame');
-                this.score = 0;
+                super();
+                // 遊戲狀態
+                this.playerSpeed = 200;
+                this.enemySpeed = 100;
+                this.playerAmmo = 50;
+                this.maxPlayerAmmo = 100;
+                this.playerScore = 0;
+                this.gameTimer = 60;
+                this.gameOver = false;
+                
+                // 控制狀態 (由 HTML 按鈕改變)
+                this.inputs = { up: false, down: false, left: false, right: false, fire: false };
+                this.lastFacing = 0; // 0:Right, 90:Down, 180:Left, -90:Up (Phaser 角度)
             }
 
             preload() {
-                this.createTex('p', 24, 24, 0x00ff00);
-                this.createTex('e1', 24, 24, 0xff0000);
-                this.createTex('e2', 24, 24, 0xff00ff);
-                this.createTex('e3', 24, 24, 0xffa500);
-                this.createTex('b', 8, 8, 0xffff00);
-                this.createTex('eb', 8, 8, 0xffffff);
-                this.createTex('cov', 1, 1, 0x666666);
+                this.createTexture('player', 24, 24, 0x00ff00);
+                this.createTexture('enemy', 24, 24, 0xff0000);
+                this.createTexture('bullet', 10, 10, 0xffff00);
+                this.createTexture('ammoPack', 16, 16, 0x00ffff);
             }
 
-            createTex(k, w, h, c) {
+            createTexture(key, w, h, color) {
                 const g = this.make.graphics({ x: 0, y: 0, add: false });
-                g.fillStyle(c, 1); g.fillRect(0, 0, w, h);
-                g.generateTexture(k, w, h);
+                g.fillStyle(color, 1); g.fillRect(0, 0, w, h); g.generateTexture(key, w, h);
             }
 
             create() {
+                // 1. 世界設定
                 this.physics.world.setBounds(0, 0, 2000, 2000);
                 
-                // 1. 建立群組 (先建立，確保成員能引用)
-                this.bullets = this.physics.add.group();
-                this.enemyBullets = this.physics.add.group();
-                this.enemies = this.physics.add.group({ classType: Enemy, runChildUpdate: true });
-                this.covers = this.physics.add.staticGroup();
-
-                // 2. 玩家與攝影機
-                this.player = this.physics.add.sprite(1000, 1000, 'p').setDepth(5);
-                this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+                // 2. 角色與相機
+                this.player = this.physics.add.sprite(1000, 1000, 'player');
+                this.player.setCollideWorldBounds(true);
+                this.cameras.main.startFollow(this.player, true, 0.05, 0.05);
                 this.cameras.main.setBounds(0, 0, 2000, 2000);
 
-                // 3. 生成掩體
-                for(let i=0; i<20; i++) {
-                    let x = Phaser.Math.Between(100, 1900), y = Phaser.Math.Between(100, 1900);
-                    if(Phaser.Math.Distance.Between(x, y, 1000, 1000) < 150) continue;
-                    let c = this.covers.create(x, y, 'cov');
-                    c.setDisplaySize(Phaser.Math.Between(40, 100), Phaser.Math.Between(40, 100)).refreshBody();
-                    c.setData('hp', 3);
-                }
+                // 3. 群組
+                this.enemies = this.physics.add.group({ classType: Enemy, runChildUpdate: true });
+                this.bullets = this.physics.add.group({ classType: Bullet, runChildUpdate: true });
+                this.ammoPacks = this.physics.add.group();
 
-                // 4. 碰撞邏輯 (TK 友傷就在這裡)
-                this.physics.add.collider(this.player, this.covers);
-                this.physics.add.collider(this.enemies, this.covers);
-                this.physics.add.collider(this.enemies, this.enemies);
+                // 4. 碰撞邏輯
+                this.physics.add.overlap(this.bullets, this.enemies, this.hitEnemy, null, this);
+                this.physics.add.overlap(this.player, this.enemies, this.playerHitByEnemy, null, this);
+                this.physics.add.overlap(this.player, this.ammoPacks, this.collectAmmo, null, this);
+
+                // 5. 事件與計時器
+                this.time.addEvent({ delay: 1500, callback: this.spawnEnemy, callbackScope: this, loop: true });
+                this.time.addEvent({ delay: 5000, callback: this.spawnAmmoPack, callbackScope: this, loop: true });
+                this.timerEvent = this.time.addEvent({ delay: 1000, callback: this.updateTimer, callbackScope: this, loop: true });
+
+                // 6. 綁定 HTML 按鈕事件 (最穩定的控制方式)
+                this.bindHtmlControl('btn-up', 'up');
+                this.bindHtmlControl('btn-down', 'down');
+                this.bindHtmlControl('btn-left', 'left');
+                this.bindHtmlControl('btn-right', 'right');
                 
-                // 擊中掩體
-                const hitCov = (b, c) => { b.destroy(); let h = c.getData('hp')-1; c.setData('hp', h); c.setAlpha(h/3); if(h<=0) c.destroy(); };
-                this.physics.add.overlap(this.bullets, this.covers, hitCov);
-                this.physics.add.overlap(this.enemyBullets, this.covers, hitCov);
+                // 開火按鈕邏輯
+                const fireBtn = document.getElementById('btn-fire');
+                const triggerFire = (e) => {
+                    e.preventDefault();
+                    this.shootBullet(); // 點擊直接開火
+                };
+                fireBtn.addEventListener('mousedown', triggerFire);
+                fireBtn.addEventListener('touchstart', triggerFire);
 
-                // 玩家子彈打敵人
-                this.physics.add.overlap(this.bullets, this.enemies, (b, e) => { b.destroy(); e.takeDamage(1); });
-                
-                // 敵人子彈打玩家 (一發死)
-                this.physics.add.overlap(this.enemyBullets, this.player, () => this.gameOver('你被擊中了！'));
-                this.physics.add.overlap(this.enemies, this.player, () => this.gameOver('你被撞到了！'));
+                // 鍵盤備用支援 (WASD)
+                this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT');
 
-                // 敵人子彈打敵人 (TK)
-                this.physics.add.overlap(this.enemyBullets, this.enemies, (b, e) => { b.destroy(); e.takeDamage(1); });
-
-                // 5. 虛擬搖桿與視線
-                this.input.addPointer(1);
-                this.joyL = { x: 120, y: 480, active: false, ptr: null };
-                this.joyR = { x: 680, y: 480, active: false, ptr: null, ang: 0 };
-                
-                this.uiG = this.add.graphics().setScrollFactor(0).setDepth(10);
-                this.laserG = this.add.graphics().setDepth(1);
-
-                this.time.addEvent({ delay: 2000, callback: this.spawnEnemy, callbackScope: this, loop: true });
+                // 初始 HUD 更新
+                this.updateHud();
             }
 
-            gameOver(msg) {
-                alert(msg + "\n分數: " + this.score);
-                location.reload();
-            }
-
-            spawnEnemy() {
-                const ang = Math.random() * Math.PI * 2;
-                const x = this.player.x + Math.cos(ang) * 600;
-                const y = this.player.y + Math.sin(ang) * 600;
-                const type = Phaser.Math.Between(1, 3);
-                const enemy = this.enemies.get(x, y, 'e' + type);
-                if (enemy) enemy.setup(type);
+            // 綁定 HTML 按鈕 helper
+            bindHtmlControl(id, prop) {
+                const btn = document.getElementById(id);
+                const start = (e) => { e.preventDefault(); this.inputs[prop] = true; };
+                const end = (e) => { e.preventDefault(); this.inputs[prop] = false; };
+                
+                btn.addEventListener('mousedown', start);
+                btn.addEventListener('mouseup', end);
+                btn.addEventListener('touchstart', start);
+                btn.addEventListener('touchend', end);
+                btn.addEventListener('mouseleave', end); // 防止滑鼠移出按鈕後卡住
             }
 
             update() {
-                this.handleJoysticks();
-                this.drawUI();
+                if (this.gameOver) return;
+                this.handleMovement();
             }
 
-            handleJoysticks() {
+            handleMovement() {
                 this.player.setVelocity(0);
-                let speed = 200;
+                let vx = 0;
+                let vy = 0;
 
-                [this.input.pointer1, this.input.pointer2, this.input.mousePointer].forEach(p => {
-                    if (p.isDown) {
-                        if (Phaser.Math.Distance.Between(p.x, p.y, 120, 480) < 100 && (!this.joyR.ptr || this.joyR.ptr !== p)) {
-                            this.joyL.active = true; this.joyL.ptr = p;
-                        } else if (Phaser.Math.Distance.Between(p.x, p.y, 680, 480) < 100 && (!this.joyL.ptr || this.joyL.ptr !== p)) {
-                            this.joyR.active = true; this.joyR.ptr = p;
-                        }
+                // 結合 鍵盤 與 HTML按鈕 的輸入
+                const up = this.inputs.up || this.keys.W.isDown || this.keys.UP.isDown;
+                const down = this.inputs.down || this.keys.S.isDown || this.keys.DOWN.isDown;
+                const left = this.inputs.left || this.keys.A.isDown || this.keys.LEFT.isDown;
+                const right = this.inputs.right || this.keys.D.isDown || this.keys.RIGHT.isDown;
+
+                if (left) vx = -this.playerSpeed;
+                else if (right) vx = this.playerSpeed;
+
+                if (up) vy = -this.playerSpeed;
+                else if (down) vy = this.playerSpeed;
+
+                this.player.setVelocity(vx, vy);
+
+                // 計算面向 (只在移動時更新，且鎖定 4 個方向)
+                if (vx !== 0 || vy !== 0) {
+                    // 正規化速度以避免斜向過快
+                    this.player.body.velocity.normalize().scale(this.playerSpeed);
+                    
+                    if (Math.abs(vx) > Math.abs(vy)) {
+                        this.lastFacing = (vx > 0) ? 0 : 180; // 右 或 左
+                    } else {
+                        this.lastFacing = (vy > 0) ? 90 : -90; // 下 或 上
                     }
-                });
-
-                if (this.joyL.ptr && !this.joyL.ptr.isDown) { this.joyL.active = false; this.joyL.ptr = null; }
-                if (this.joyR.ptr && !this.joyR.ptr.isDown) {
-                    if (this.joyR.active) this.fireBullet();
-                    this.joyR.active = false; this.joyR.ptr = null;
-                }
-
-                if (this.joyL.active) {
-                    let ang = Phaser.Math.Angle.Between(120, 480, this.joyL.ptr.x, this.joyL.ptr.y);
-                    if (this.joyR.active) speed *= 0.5; // 瞄準時減速
-                    this.player.setVelocity(Math.cos(ang)*speed, Math.sin(ang)*speed);
-                }
-
-                this.laserG.clear();
-                if (this.joyR.active) {
-                    this.joyR.ang = Phaser.Math.Angle.Between(680, 480, this.joyR.ptr.x, this.joyR.ptr.y);
-                    this.player.rotation = this.joyR.ang;
-                    this.laserG.lineStyle(1, 0x00ff00, 0.3);
-                    this.laserG.lineBetween(this.player.x, this.player.y, this.player.x + Math.cos(this.joyR.ang)*800, this.player.y + Math.sin(this.joyR.ang)*800);
+                    this.player.setAngle(this.lastFacing);
                 }
             }
 
-            fireBullet() {
-                const b = this.bullets.get(this.player.x, this.player.y, 'b');
-                if (b) {
-                    b.setActive(true).setVisible(true);
-                    this.physics.velocityFromRotation(this.joyR.ang, 600, b.body.velocity);
+            shootBullet() {
+                if (this.gameOver || this.playerAmmo <= 0) return;
+
+                const bullet = this.bullets.get(this.player.x, this.player.y);
+                if (bullet) {
+                    this.playerAmmo--;
+                    this.updateHud();
+                    bullet.fire(this.player.x, this.player.y, this.lastFacing);
                 }
             }
 
-            drawUI() {
-                this.uiG.clear();
-                this.uiG.lineStyle(2, 0xffffff, 0.3);
-                this.uiG.strokeCircle(120, 480, 60);
-                this.uiG.strokeCircle(680, 480, 60);
-            }
-        }
+            hitEnemy(bullet, enemy) {
+                bullet.destroy();
+                // 隨機傷害 1 或 2
+                const damage = Phaser.Math.Between(1, 2);
+                enemy.takeDamage(damage);
 
-        // 敵人 Class：修正 Scope 問題
-        class Enemy extends Phaser.Physics.Arcade.Sprite {
-            setup(type) {
-                this.type = type;
-                this.hp = 2;
-                this.lastFired = 0;
-                this.setActive(true).setVisible(true);
-                this.setTint(type === 1 ? 0xff0000 : (type === 2 ? 0xff00ff : 0xffa500));
+                // 顯示傷害數字
+                const txt = this.add.text(enemy.x, enemy.y - 20, damage, { fontSize: '16px', fill: '#fff' }).setOrigin(0.5);
+                this.tweens.add({ targets: txt, y: enemy.y - 50, alpha: 0, duration: 500, onComplete: () => txt.destroy() });
+
+                if (enemy.health <= 0) {
+                    enemy.destroy();
+                    this.playerScore += 10;
+                    this.updateHud();
+                }
             }
-            takeDamage(n) {
-                this.hp -= n; if(this.hp <= 0) { this.scene.score += 10; this.destroy(); }
+
+            playerHitByEnemy() {
+                if (this.gameOver) return;
+                this.gameOver = true;
+                this.physics.pause();
+                alert('遊戲結束！你被抓住了。');
+                location.reload();
             }
-            update(time) {
-                if (!this.active || !this.body) return;
-                const dist = Phaser.Math.Distance.Between(this.x, this.y, this.scene.player.x, this.scene.player.y);
+
+            collectAmmo(player, pack) {
+                pack.destroy();
+                this.playerAmmo = Math.min(this.playerAmmo + 10, this.maxPlayerAmmo);
+                this.updateHud();
+            }
+
+            spawnEnemy() {
+                if (this.gameOver) return;
+                const cam = this.cameras.main;
+                // 簡單的生成邏輯：在攝影機邊緣外隨機生成
+                const r = 500; // 距離中心的半徑
+                const angle = Phaser.Math.Between(0, 360);
+                const x = this.player.x + Math.cos(angle) * r;
+                const y = this.player.y + Math.sin(angle) * r;
                 
-                // 追逐邏輯
-                if (dist > 350) this.scene.physics.moveToObject(this, this.scene.player, 80);
-                else if (dist < 200) this.scene.physics.moveToObject(this, this.scene.player, -60);
-                else this.setVelocity(0);
-
-                // 射擊頻率 (點射 1.5s, 連發/霰彈 2s)
-                const rate = this.type === 1 ? 1500 : 2000;
-                if (time > this.lastFired + rate && dist < 500) {
-                    this.fire();
-                    this.lastFired = time;
+                // 確保在世界範圍內
+                if (x > 0 && x < 2000 && y > 0 && y < 2000) {
+                    const enemy = this.enemies.get(x, y);
+                    if (enemy) enemy.init(this.player, this.enemySpeed);
                 }
             }
-            fire() {
-                const ang = Phaser.Math.Angle.Between(this.x, this.y, this.scene.player.x, this.scene.player.y);
-                const shoot = (a) => {
-                    if (!this.scene) return; // 確保場景還在
-                    const b = this.scene.enemyBullets.get(this.x, this.y, 'eb');
-                    if (b) {
-                        b.setActive(true).setVisible(true);
-                        this.scene.physics.velocityFromRotation(a, 350, b.body.velocity);
-                    }
-                };
 
-                if (this.type === 1) shoot(ang);
-                else if (this.type === 2) {
-                    for(let i=0; i<3; i++) this.scene.time.delayedCall(i*150, () => shoot(ang));
+            spawnAmmoPack() {
+                if (this.gameOver) return;
+                const x = Phaser.Math.Between(100, 1900);
+                const y = Phaser.Math.Between(100, 1900);
+                this.ammoPacks.create(x, y, 'ammoPack');
+            }
+
+            updateTimer() {
+                if (this.gameOver) return;
+                this.gameTimer--;
+                this.updateHud();
+                if (this.gameTimer <= 0) {
+                    this.gameOver = true;
+                    this.physics.pause();
+                    alert('時間到！生存成功！\n分數: ' + this.playerScore);
+                    location.reload();
                 }
-                else if (this.type === 3) {
-                    for(let i=-1; i<=1; i++) shoot(ang + i*0.25);
-                }
+            }
+
+            updateHud() {
+                document.getElementById('hud-ammo').innerText = `Ammo: ${this.playerAmmo}/${this.maxPlayerAmmo}`;
+                document.getElementById('hud-score').innerText = `Score: ${this.playerScore}`;
+                document.getElementById('hud-time').innerText = `Time: ${this.gameTimer}`;
             }
         }
 
-        new Phaser.Game({
-            type: Phaser.AUTO, width: 800, height: 600,
-            physics: { default: 'arcade', arcade: { gravity: { y: 0 } } },
-            scene: MyGame,
-            input: { activePointers: 3 }
-        });
+        // --- 敵人與子彈類別 ---
+
+        class Enemy extends Phaser.Physics.Arcade.Sprite {
+            constructor(scene, x, y) {
+                super(scene, x, y, 'enemy');
+            }
+            init(player, speed) {
+                this.player = player;
+                this.speed = speed;
+                this.health = 2;
+                this.setActive(true).setVisible(true);
+                this.body.reset(this.x, this.y);
+            }
+            takeDamage(amount) {
+                this.health -= amount;
+                this.setTint(0xff8888);
+                this.scene.time.delayedCall(100, () => this.clearTint());
+            }
+            update() {
+                if (!this.active || !this.player) return;
+                // 簡單的追蹤 AI，但視覺上我們不旋轉它，保持方塊感
+                this.scene.physics.moveToObject(this, this.player, this.speed);
+                
+                // 根據要求：敵人也只能上下左右移動（視覺上）
+                // 我們可以鎖定他的面向角度 (Optional)
+                // 這裡為了流暢度保持物理移動，但視覺上它只是一個紅色方塊，沒有旋轉
+            }
+        }
+
+        class Bullet extends Phaser.Physics.Arcade.Sprite {
+            constructor(scene, x, y) {
+                super(scene, x, y, 'bullet');
+            }
+            fire(x, y, angle) {
+                this.body.reset(x, y);
+                this.setActive(true).setVisible(true);
+                this.setAngle(angle);
+                
+                // Phaser 的角度是度數，轉換成速度向量
+                // 0度=右, 90度=下, 180度=左, -90度=上
+                this.scene.physics.velocityFromAngle(angle, 400, this.body.velocity);
+
+                // 2秒後銷毀
+                this.scene.time.delayedCall(2000, () => this.destroy());
+            }
+        }
+
+        const config = {
+            type: Phaser.AUTO,
+            scale: {
+                mode: Phaser.Scale.RESIZE, // 自動適應瀏覽器大小
+                parent: 'game-container',
+                autoCenter: Phaser.Scale.CENTER_BOTH
+            },
+            physics: { default: 'arcade', arcade: { debug: false } },
+            scene: MyGame
+        };
+
+        const game = new Phaser.Game(config);
     </script>
 </body>
 </html>
