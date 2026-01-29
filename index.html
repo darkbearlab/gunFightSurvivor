@@ -5,14 +5,8 @@
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
     <style>
         body { margin: 0; background: #222; font-family: 'Arial', sans-serif; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
-        
-        /* 遊戲容器 */
         #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
-
-        /* UI 控制層 (浮在 Canvas 上) */
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
-        
-        /* 按鈕共用樣式 */
         .btn {
             position: absolute; background: rgba(255, 255, 255, 0.2); border: 2px solid rgba(255, 255, 255, 0.5);
             border-radius: 10px; pointer-events: auto; touch-action: none;
@@ -20,43 +14,28 @@
             color: white; font-weight: bold; font-size: 24px; user-select: none;
         }
         .btn:active { background: rgba(255, 255, 255, 0.5); }
-
-        /* 左側十字鍵佈局 */
         #dpad { position: absolute; bottom: 20px; left: 20px; width: 150px; height: 150px; }
         #btn-up { top: 0; left: 50px; width: 50px; height: 50px; }
         #btn-down { bottom: 0; left: 50px; width: 50px; height: 50px; }
         #btn-left { top: 50px; left: 0; width: 50px; height: 50px; }
         #btn-right { top: 50px; right: 0; width: 50px; height: 50px; }
-
-        /* 右側開火鍵 */
         #btn-fire { 
             position: absolute; bottom: 40px; right: 40px; 
             width: 80px; height: 80px; border-radius: 50%; 
             background: rgba(255, 0, 0, 0.3); border-color: rgba(255, 0, 0, 0.6);
         }
         #btn-fire:active { background: rgba(255, 0, 0, 0.6); }
-
-        /* HUD 文字容器 */
         #hud { position: absolute; top: 10px; left: 10px; color: white; text-shadow: 1px 1px 2px black; pointer-events: none; }
     </style>
 </head>
 <body>
     <div id="game-container"></div>
-
     <div id="ui-layer">
-        <div id="hud">
-            <div id="hud-ammo">Ammo: 0</div>
-            <div id="hud-score">Score: 0</div>
-            <div id="hud-time">Time: 60</div>
-        </div>
-
+        <div id="hud"><div id="hud-ammo">Ammo: 0</div><div id="hud-score">Score: 0</div><div id="hud-time">Time: 60</div></div>
         <div id="dpad">
-            <div id="btn-up" class="btn">↑</div>
-            <div id="btn-down" class="btn">↓</div>
-            <div id="btn-left" class="btn">←</div>
-            <div id="btn-right" class="btn">→</div>
+            <div id="btn-up" class="btn">↑</div><div id="btn-down" class="btn">↓</div>
+            <div id="btn-left" class="btn">←</div><div id="btn-right" class="btn">→</div>
         </div>
-
         <div id="btn-fire" class="btn">FIRE</div>
     </div>
 
@@ -64,7 +43,6 @@
         class MyGame extends Phaser.Scene {
             constructor() {
                 super();
-                // 遊戲狀態
                 this.playerSpeed = 200;
                 this.enemySpeed = 100;
                 this.playerAmmo = 50;
@@ -72,82 +50,83 @@
                 this.playerScore = 0;
                 this.gameTimer = 60;
                 this.gameOver = false;
-                
-                // 控制狀態 (由 HTML 按鈕改變)
-                this.inputs = { up: false, down: false, left: false, right: false, fire: false };
-                this.lastFacing = 0; // 0:Right, 90:Down, 180:Left, -90:Up (Phaser 角度)
+                this.inputs = { up: false, down: false, left: false, right: false };
+                this.lastFacing = 0; 
             }
 
+
             preload() {
-                this.createTexture('player', 24, 24, 0x00ff00);
+                // 修改這裡：直接填入你的 GitHub Raw URL
+                // 記得確認 frameWidth 和 frameHeight 是否真的是 32x32
+                this.load.spritesheet('player', 
+                    'https://raw.githubusercontent.com/darkbearlab/gunFightSurvivor/refs/heads/main/player_front.png', 
+                    { frameWidth: 32, frameHeight: 32 }
+                );
+            
+                // 其他色塊繼續保留 (除非你也有圖了)
                 this.createTexture('enemy', 24, 24, 0xff0000);
                 this.createTexture('bullet', 10, 10, 0xffff00);
                 this.createTexture('ammoPack', 16, 16, 0x00ffff);
             }
-
+            
             createTexture(key, w, h, color) {
                 const g = this.make.graphics({ x: 0, y: 0, add: false });
                 g.fillStyle(color, 1); g.fillRect(0, 0, w, h); g.generateTexture(key, w, h);
             }
 
             create() {
-                // 1. 世界設定
                 this.physics.world.setBounds(0, 0, 2000, 2000);
                 
-                // 2. 角色與相機
+                // [修改點 2] 建立動畫
+                // 我們定義一個叫 'walk' 的動畫，使用第 0, 1, 2, 3 格
+                this.anims.create({
+                    key: 'walk', 
+                    frames: this.anims.generateFrameNumbers('player', { start: 0, end: 3 }), 
+                    frameRate: 10, // 每秒播 10 格 (速度感)
+                    repeat: -1     // -1 代表無限循環播放
+                });
+
                 this.player = this.physics.add.sprite(1000, 1000, 'player');
                 this.player.setCollideWorldBounds(true);
+                // 稍微放大一點，不然 32px 在手機上可能有點小
+                this.player.setScale(1.5); 
+
                 this.cameras.main.startFollow(this.player, true, 0.05, 0.05);
                 this.cameras.main.setBounds(0, 0, 2000, 2000);
 
-                // 3. 群組
                 this.enemies = this.physics.add.group({ classType: Enemy, runChildUpdate: true });
                 this.bullets = this.physics.add.group({ classType: Bullet, runChildUpdate: true });
                 this.ammoPacks = this.physics.add.group();
 
-                // 4. 碰撞邏輯
                 this.physics.add.overlap(this.bullets, this.enemies, this.hitEnemy, null, this);
                 this.physics.add.overlap(this.player, this.enemies, this.playerHitByEnemy, null, this);
                 this.physics.add.overlap(this.player, this.ammoPacks, this.collectAmmo, null, this);
 
-                // 5. 事件與計時器
                 this.time.addEvent({ delay: 1500, callback: this.spawnEnemy, callbackScope: this, loop: true });
                 this.time.addEvent({ delay: 5000, callback: this.spawnAmmoPack, callbackScope: this, loop: true });
                 this.timerEvent = this.time.addEvent({ delay: 1000, callback: this.updateTimer, callbackScope: this, loop: true });
 
-                // 6. 綁定 HTML 按鈕事件 (最穩定的控制方式)
                 this.bindHtmlControl('btn-up', 'up');
                 this.bindHtmlControl('btn-down', 'down');
                 this.bindHtmlControl('btn-left', 'left');
                 this.bindHtmlControl('btn-right', 'right');
                 
-                // 開火按鈕邏輯
                 const fireBtn = document.getElementById('btn-fire');
-                const triggerFire = (e) => {
-                    e.preventDefault();
-                    this.shootBullet(); // 點擊直接開火
-                };
+                const triggerFire = (e) => { e.preventDefault(); this.shootBullet(); };
                 fireBtn.addEventListener('mousedown', triggerFire);
                 fireBtn.addEventListener('touchstart', triggerFire);
 
-                // 鍵盤備用支援 (WASD)
                 this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT');
-
-                // 初始 HUD 更新
                 this.updateHud();
             }
 
-            // 綁定 HTML 按鈕 helper
             bindHtmlControl(id, prop) {
                 const btn = document.getElementById(id);
                 const start = (e) => { e.preventDefault(); this.inputs[prop] = true; };
                 const end = (e) => { e.preventDefault(); this.inputs[prop] = false; };
-                
-                btn.addEventListener('mousedown', start);
-                btn.addEventListener('mouseup', end);
-                btn.addEventListener('touchstart', start);
-                btn.addEventListener('touchend', end);
-                btn.addEventListener('mouseleave', end); // 防止滑鼠移出按鈕後卡住
+                btn.addEventListener('mousedown', start); btn.addEventListener('mouseup', end);
+                btn.addEventListener('touchstart', start); btn.addEventListener('touchend', end);
+                btn.addEventListener('mouseleave', end);
             }
 
             update() {
@@ -157,10 +136,8 @@
 
             handleMovement() {
                 this.player.setVelocity(0);
-                let vx = 0;
-                let vy = 0;
+                let vx = 0, vy = 0;
 
-                // 結合 鍵盤 與 HTML按鈕 的輸入
                 const up = this.inputs.up || this.keys.W.isDown || this.keys.UP.isDown;
                 const down = this.inputs.down || this.keys.S.isDown || this.keys.DOWN.isDown;
                 const left = this.inputs.left || this.keys.A.isDown || this.keys.LEFT.isDown;
@@ -168,29 +145,38 @@
 
                 if (left) vx = -this.playerSpeed;
                 else if (right) vx = this.playerSpeed;
-
                 if (up) vy = -this.playerSpeed;
                 else if (down) vy = this.playerSpeed;
 
                 this.player.setVelocity(vx, vy);
 
-                // 計算面向 (只在移動時更新，且鎖定 4 個方向)
+                // [修改點 3] 動畫控制邏輯
                 if (vx !== 0 || vy !== 0) {
-                    // 正規化速度以避免斜向過快
                     this.player.body.velocity.normalize().scale(this.playerSpeed);
                     
+                    // 只要有移動，就播放 'walk' 動畫
+                    // ignoreIfPlaying: true 表示如果已經在播這個動畫，不要重頭開始，讓它順順播
+                    this.player.anims.play('walk', true);
+
                     if (Math.abs(vx) > Math.abs(vy)) {
-                        this.lastFacing = (vx > 0) ? 0 : 180; // 右 或 左
+                        this.lastFacing = (vx > 0) ? 0 : 180;
+                        // 如果有左右方向的圖，這裡可以用 this.player.setFlipX(vx < 0)
                     } else {
-                        this.lastFacing = (vy > 0) ? 90 : -90; // 下 或 上
+                        this.lastFacing = (vy > 0) ? 90 : -90;
                     }
-                    this.player.setAngle(this.lastFacing);
+                    // 注意：我不使用 setAngle，因為你的圖片是「正視圖」，旋轉90度會變躺著走
+                    // 如果你要真正的「面向」，你需要上下左右四組圖片
+                } else {
+                    // 沒移動時，停止動畫
+                    this.player.anims.stop();
+                    
+                    // (選用) 設定停在第 0 格 (站立狀態)
+                    // this.player.setFrame(0); 
                 }
             }
 
             shootBullet() {
                 if (this.gameOver || this.playerAmmo <= 0) return;
-
                 const bullet = this.bullets.get(this.player.x, this.player.y);
                 if (bullet) {
                     this.playerAmmo--;
@@ -198,24 +184,21 @@
                     bullet.fire(this.player.x, this.player.y, this.lastFacing);
                 }
             }
-
+            
+            // ... (以下為與之前相同的碰撞、生成邏輯，省略以節省篇幅) ...
+            
             hitEnemy(bullet, enemy) {
                 bullet.destroy();
-                // 隨機傷害 1 或 2
                 const damage = Phaser.Math.Between(1, 2);
                 enemy.takeDamage(damage);
-
-                // 顯示傷害數字
                 const txt = this.add.text(enemy.x, enemy.y - 20, damage, { fontSize: '16px', fill: '#fff' }).setOrigin(0.5);
                 this.tweens.add({ targets: txt, y: enemy.y - 50, alpha: 0, duration: 500, onComplete: () => txt.destroy() });
-
                 if (enemy.health <= 0) {
                     enemy.destroy();
                     this.playerScore += 10;
                     this.updateHud();
                 }
             }
-
             playerHitByEnemy() {
                 if (this.gameOver) return;
                 this.gameOver = true;
@@ -223,48 +206,34 @@
                 alert('遊戲結束！你被抓住了。');
                 location.reload();
             }
-
             collectAmmo(player, pack) {
                 pack.destroy();
                 this.playerAmmo = Math.min(this.playerAmmo + 10, this.maxPlayerAmmo);
                 this.updateHud();
             }
-
             spawnEnemy() {
                 if (this.gameOver) return;
-                const cam = this.cameras.main;
-                // 簡單的生成邏輯：在攝影機邊緣外隨機生成
-                const r = 500; // 距離中心的半徑
-                const angle = Phaser.Math.Between(0, 360);
+                const r = 500; const angle = Phaser.Math.Between(0, 360);
                 const x = this.player.x + Math.cos(angle) * r;
                 const y = this.player.y + Math.sin(angle) * r;
-                
-                // 確保在世界範圍內
                 if (x > 0 && x < 2000 && y > 0 && y < 2000) {
                     const enemy = this.enemies.get(x, y);
                     if (enemy) enemy.init(this.player, this.enemySpeed);
                 }
             }
-
             spawnAmmoPack() {
                 if (this.gameOver) return;
-                const x = Phaser.Math.Between(100, 1900);
-                const y = Phaser.Math.Between(100, 1900);
-                this.ammoPacks.create(x, y, 'ammoPack');
+                this.ammoPacks.create(Phaser.Math.Between(100, 1900), Phaser.Math.Between(100, 1900), 'ammoPack');
             }
-
             updateTimer() {
                 if (this.gameOver) return;
                 this.gameTimer--;
                 this.updateHud();
                 if (this.gameTimer <= 0) {
-                    this.gameOver = true;
-                    this.physics.pause();
-                    alert('時間到！生存成功！\n分數: ' + this.playerScore);
-                    location.reload();
+                    this.gameOver = true; this.physics.pause();
+                    alert('時間到！生存成功！\n分數: ' + this.playerScore); location.reload();
                 }
             }
-
             updateHud() {
                 document.getElementById('hud-ammo').innerText = `Ammo: ${this.playerAmmo}/${this.maxPlayerAmmo}`;
                 document.getElementById('hud-score').innerText = `Score: ${this.playerScore}`;
@@ -272,60 +241,34 @@
             }
         }
 
-        // --- 敵人與子彈類別 ---
-
         class Enemy extends Phaser.Physics.Arcade.Sprite {
-            constructor(scene, x, y) {
-                super(scene, x, y, 'enemy');
-            }
+            constructor(scene, x, y) { super(scene, x, y, 'enemy'); }
             init(player, speed) {
-                this.player = player;
-                this.speed = speed;
-                this.health = 2;
-                this.setActive(true).setVisible(true);
-                this.body.reset(this.x, this.y);
+                this.player = player; this.speed = speed; this.health = 2;
+                this.setActive(true).setVisible(true); this.body.reset(this.x, this.y);
             }
             takeDamage(amount) {
-                this.health -= amount;
-                this.setTint(0xff8888);
+                this.health -= amount; this.setTint(0xff8888);
                 this.scene.time.delayedCall(100, () => this.clearTint());
             }
             update() {
                 if (!this.active || !this.player) return;
-                // 簡單的追蹤 AI，但視覺上我們不旋轉它，保持方塊感
                 this.scene.physics.moveToObject(this, this.player, this.speed);
-                
-                // 根據要求：敵人也只能上下左右移動（視覺上）
-                // 我們可以鎖定他的面向角度 (Optional)
-                // 這裡為了流暢度保持物理移動，但視覺上它只是一個紅色方塊，沒有旋轉
             }
         }
 
         class Bullet extends Phaser.Physics.Arcade.Sprite {
-            constructor(scene, x, y) {
-                super(scene, x, y, 'bullet');
-            }
+            constructor(scene, x, y) { super(scene, x, y, 'bullet'); }
             fire(x, y, angle) {
-                this.body.reset(x, y);
-                this.setActive(true).setVisible(true);
-                this.setAngle(angle);
-                
-                // Phaser 的角度是度數，轉換成速度向量
-                // 0度=右, 90度=下, 180度=左, -90度=上
+                this.body.reset(x, y); this.setActive(true).setVisible(true); this.setAngle(angle);
                 this.scene.physics.velocityFromAngle(angle, 400, this.body.velocity);
-
-                // 2秒後銷毀
                 this.scene.time.delayedCall(2000, () => this.destroy());
             }
         }
 
         const config = {
             type: Phaser.AUTO,
-            scale: {
-                mode: Phaser.Scale.RESIZE, // 自動適應瀏覽器大小
-                parent: 'game-container',
-                autoCenter: Phaser.Scale.CENTER_BOTH
-            },
+            scale: { mode: Phaser.Scale.RESIZE, parent: 'game-container', autoCenter: Phaser.Scale.CENTER_BOTH },
             physics: { default: 'arcade', arcade: { debug: false } },
             scene: MyGame
         };
