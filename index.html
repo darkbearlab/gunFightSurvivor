@@ -1,306 +1,752 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-TW">
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>羅賓漢戰記 - Phase 7 (Fixed Movement)</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
-        body { margin: 0; background: #222; font-family: 'Arial', sans-serif; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
-        #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
-        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
-        .btn {
-            position: absolute; background: rgba(255, 255, 255, 0.2); border: 2px solid rgba(255, 255, 255, 0.5);
-            border-radius: 10px; pointer-events: auto; touch-action: none;
-            display: flex; align-items: center; justify-content: center;
-            color: white; font-weight: bold; font-size: 24px; user-select: none;
+        body { margin: 0; padding: 0; background-color: #2d2d2d; overflow: hidden; font-family: 'Segoe UI', sans-serif; user-select: none; }
+        #game-container { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+        
+        #ui-layer {
+            position: absolute; top: 20px; left: 20px; color: white; pointer-events: none;
+            text-shadow: 1px 1px 2px black; background-color: rgba(0, 0, 0, 0.7); padding: 15px; border-radius: 8px; max-width: 320px; z-index: 10;
         }
-        .btn:active { background: rgba(255, 255, 255, 0.5); }
-        #dpad { position: absolute; bottom: 20px; left: 20px; width: 150px; height: 150px; }
-        #btn-up { top: 0; left: 50px; width: 50px; height: 50px; }
-        #btn-down { bottom: 0; left: 50px; width: 50px; height: 50px; }
-        #btn-left { top: 50px; left: 0; width: 50px; height: 50px; }
-        #btn-right { top: 50px; right: 0; width: 50px; height: 50px; }
-        #btn-fire { 
-            position: absolute; bottom: 40px; right: 40px; 
-            width: 80px; height: 80px; border-radius: 50%; 
-            background: rgba(255, 0, 0, 0.3); border-color: rgba(255, 0, 0, 0.6);
+        
+        #game-over-screen {
+            display: none; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.85); color: white; z-index: 20;
+            flex-direction: column; justify-content: center; align-items: center; text-align: center;
         }
-        #btn-fire:active { background: rgba(255, 0, 0, 0.6); }
-        #hud { position: absolute; top: 10px; left: 10px; color: white; text-shadow: 1px 1px 2px black; pointer-events: none; }
+        #game-over-title { font-size: 3em; margin-bottom: 20px; font-weight: bold; }
+        button { margin-top: 30px; padding: 10px 30px; font-size: 1.5em; cursor: pointer; background: gold; border: none; border-radius: 5px; }
+        
+        .stat-row { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .key { color: yellow; font-weight: bold; }
+        .bar-container { width: 100%; background: #444; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden; }
+        .bar-fill { height: 100%; background: lime; width: 0%; transition: width 0.5s; }
     </style>
 </head>
 <body>
-    <div id="game-container"></div>
-    <div id="ui-layer">
-        <div id="hud"><div id="hud-ammo">Ammo: 0</div><div id="hud-score">Score: 0</div><div id="hud-time">Time: 60</div></div>
-        <div id="dpad">
-            <div id="btn-up" class="btn">↑</div><div id="btn-down" class="btn">↓</div>
-            <div id="btn-left" class="btn">←</div><div id="btn-right" class="btn">→</div>
-        </div>
-        <div id="btn-fire" class="btn">FIRE</div>
+
+<div id="ui-layer">
+    <div class="stat-row">
+        <span>時間: <span id="time-display" style="color: cyan; font-weight:bold;">05:00</span></span>
+        <span>金錢: $<span id="gold-display" style="color: gold;">0</span></span>
     </div>
+    
+    <div style="margin-top: 10px;">
+        名聲: <span id="rep-display">0</span> / 3000
+        <div class="bar-container"><div id="rep-bar" class="bar-fill"></div></div>
+    </div>
+    
+    <hr>
+    <p><span class="key">Space</span> 切換模式 | <span class="key">U</span> 升級村莊</p>
+    <p><span class="key">H</span> 招募步兵 | <span class="key">J</span> 招募弓手</p>
+    <hr>
+    <p>模式: <span id="mode-indicator" style="color: lime;">🛡️ 跟隨</span></p>
+    <p>部隊: <span id="squad-count">0</span> | 敵軍: <span id="enemy-count">0</span></p>
+</div>
 
-    <script>
-        class MyGame extends Phaser.Scene {
-            constructor() {
-                super();
-                this.playerSpeed = 200;
-                this.enemySpeed = 100;
-                this.playerAmmo = 50;
-                this.maxPlayerAmmo = 100;
-                this.playerScore = 0;
-                this.gameTimer = 60;
-                this.gameOver = false;
-                this.inputs = { up: false, down: false, left: false, right: false };
-                this.lastFacing = 0; 
-            }
+<div id="game-over-screen">
+    <div id="game-over-title">GAME OVER</div>
+    <div id="game-over-desc"></div>
+    <button onclick="location.reload()">再玩一次</button>
+</div>
 
-            preload() {
-                // [修改點 1] 換成新的完整 Sprite Sheet 網址
-                this.load.spritesheet('player', 
-                    'https://raw.githubusercontent.com/darkbearlab/gunFightSurvivor/refs/heads/main/player.png', 
-                    { frameWidth: 32, frameHeight: 32 }
-                );
+<div id="game-container"></div>
 
-                this.createTexture('enemy', 24, 24, 0xff0000);
-                this.createTexture('bullet', 10, 10, 0xffff00);
-                this.createTexture('ammoPack', 16, 16, 0x00ffff);
-            }
+<script>
+// --- 全域設定 ---
+const GAME_DURATION = 300; 
+const TARGET_REP = 3000;
 
-            createTexture(key, w, h, color) {
-                const g = this.make.graphics({ x: 0, y: 0, add: false });
-                g.fillStyle(color, 1); g.fillRect(0, 0, w, h); g.generateTexture(key, w, h);
-            }
+// 變數
+let game, player, director;
+let gold = 300; 
+let reputation = 0;
+let isAutoAttackMode = false;
+let gameTimeLeft = GAME_DURATION;
+let isGameOver = false;
 
-            create() {
-                this.physics.world.setBounds(0, 0, 2000, 2000);
-                
-                // [修改點 2] 定義四個方向的動畫
-                // 向下走 (Row 0)
-                this.anims.create({
-                    key: 'walk-down',
-                    frames: this.anims.generateFrameNumbers('player', { start: 0, end: 3 }),
-                    frameRate: 10,
-                    repeat: -1
-                });
-                // 向左走 (Row 1)
-                this.anims.create({
-                    key: 'walk-left',
-                    frames: this.anims.generateFrameNumbers('player', { start: 4, end: 7 }),
-                    frameRate: 10,
-                    repeat: -1
-                });
-                // 向右走 (Row 2)
-                this.anims.create({
-                    key: 'walk-right',
-                    frames: this.anims.generateFrameNumbers('player', { start: 8, end: 11 }),
-                    frameRate: 10,
-                    repeat: -1
-                });
-                // 向上走 (Row 3)
-                this.anims.create({
-                    key: 'walk-up',
-                    frames: this.anims.generateFrameNumbers('player', { start: 12, end: 15 }),
-                    frameRate: 10,
-                    repeat: -1
-                });
+// 群組
+let squad, enemies, wildLife, obstacles, projectiles;
+let villages = [];
+let uiTexts = {}; 
 
+// 輸入
+let cursors, wasd, keys;
 
-                this.player = this.physics.add.sprite(1000, 1000, 'player');
-                this.player.setCollideWorldBounds(true);
-                this.player.setScale(1.5); 
-                // 預設播放向下走的動畫，讓它一開始有圖案
-                this.player.anims.play('walk-down');
-                this.player.anims.stop(); 
+// --- 輔助函式 ---
+function updateGold(amount) {
+    gold += amount;
+    uiTexts.gold.innerText = gold;
+}
 
-                this.cameras.main.startFollow(this.player, true, 0.05, 0.05);
-                this.cameras.main.setBounds(0, 0, 2000, 2000);
+function updateRep(amount) {
+    reputation += amount;
+    if (reputation < 0) reputation = 0;
+    uiTexts.rep.innerText = Math.floor(reputation);
+    let pct = Math.min((reputation / TARGET_REP) * 100, 100);
+    uiTexts.repBar.style.width = pct + "%";
+}
 
-                this.enemies = this.physics.add.group({ classType: Enemy, runChildUpdate: true });
-                this.bullets = this.physics.add.group({ classType: Bullet, runChildUpdate: true });
-                this.ammoPacks = this.physics.add.group();
+function showDamageText(scene, x, y, amount, color = '#fff') {
+    let text = scene.add.text(x, y - 20, amount, {
+        fontSize: '16px', color: color, stroke: '#000', strokeThickness: 3, fontWeight: 'bold'
+    }).setOrigin(0.5);
+    scene.tweens.add({ targets: text, y: y - 50, alpha: 0, duration: 800, onComplete: () => text.destroy() });
+}
 
-                this.physics.add.overlap(this.bullets, this.enemies, this.hitEnemy, null, this);
-                this.physics.add.overlap(this.player, this.enemies, this.playerHitByEnemy, null, this);
-                this.physics.add.overlap(this.player, this.ammoPacks, this.collectAmmo, null, this);
+function showToast(scene, msg, color) {
+    let text = scene.add.text(player.x, player.y - 150, msg, {
+        fontSize: '24px', color: color, stroke: '#000', strokeThickness: 4, backgroundColor: 'rgba(0,0,0,0.6)', padding: {x:10, y:5}
+    }).setOrigin(0.5).setDepth(100);
+    scene.tweens.add({ targets: text, y: player.y - 200, alpha: 0, duration: 3000, onComplete: () => text.destroy() });
+}
 
-                this.time.addEvent({ delay: 1500, callback: this.spawnEnemy, callbackScope: this, loop: true });
-                this.time.addEvent({ delay: 5000, callback: this.spawnAmmoPack, callbackScope: this, loop: true });
-                this.timerEvent = this.time.addEvent({ delay: 1000, callback: this.updateTimer, callbackScope: this, loop: true });
+function checkGameOver() {
+    if (isGameOver) return;
+    if (gameTimeLeft <= 0) {
+        if (reputation >= TARGET_REP) endGame(true, "傳奇誕生！<br>你成功抵抗了暴政，並建立了新的秩序。");
+        else endGame(false, "起義失敗。<br>隨著獅心王歸國，你的名字被遺忘在歷史中。");
+    }
+}
 
-                this.bindHtmlControl('btn-up', 'up');
-                this.bindHtmlControl('btn-down', 'down');
-                this.bindHtmlControl('btn-left', 'left');
-                this.bindHtmlControl('btn-right', 'right');
-                
-                const fireBtn = document.getElementById('btn-fire');
-                const triggerFire = (e) => { e.preventDefault(); this.shootBullet(); };
-                fireBtn.addEventListener('mousedown', triggerFire);
-                fireBtn.addEventListener('touchstart', triggerFire);
+function endGame(victory, message) {
+    isGameOver = true;
+    game.scene.pause("default");
+    const screen = document.getElementById('game-over-screen');
+    const title = document.getElementById('game-over-title');
+    const desc = document.getElementById('game-over-desc');
+    screen.style.display = 'flex';
+    title.innerText = victory ? "VICTORY!" : "DEFEAT";
+    title.style.color = victory ? "gold" : "red";
+    desc.innerHTML = message;
+}
 
-                this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT');
-                this.updateHud();
-            }
+// --- 單位類別 ---
 
-            bindHtmlControl(id, prop) {
-                const btn = document.getElementById(id);
-                const start = (e) => { e.preventDefault(); this.inputs[prop] = true; };
-                const end = (e) => { e.preventDefault(); this.inputs[prop] = false; };
-                btn.addEventListener('mousedown', start); btn.addEventListener('mouseup', end);
-                btn.addEventListener('touchstart', start); btn.addEventListener('touchend', end);
-                btn.addEventListener('mouseleave', end);
-            }
+class Unit extends Phaser.GameObjects.Rectangle {
+    constructor(scene, x, y, width, height, color, hp, maxHp) {
+        super(scene, x, y, width, height, color);
+        scene.add.existing(this);
+        scene.physics.add.existing(this);
+        this.hp = hp;
+        this.maxHp = maxHp || hp;
+        this.isDead = false;
+        this.lastAttackTime = 0;
+        
+        // 血條
+        this.hpBarBg = scene.add.rectangle(x, y - height, width, 4, 0x000000).setDepth(1);
+        this.hpBar = scene.add.rectangle(x, y - height, width, 4, 0x00ff00).setDepth(1);
+    }
 
-            update() {
-                if (this.gameOver) return;
-                this.handleMovement();
-            }
+    preUpdate() {
+        if (this.isDead) return;
+        this.hpBarBg.setPosition(this.x, this.y - this.height/2 - 5);
+        this.hpBar.setPosition(this.x, this.y - this.height/2 - 5);
+    }
 
-            handleMovement() {
-                this.player.setVelocity(0);
-                let vx = 0, vy = 0;
+    takeDamage(amount) {
+        if (this.isDead) return;
+        this.scene.tweens.add({ targets: this, alpha: 0.2, duration: 50, yoyo: true, repeat: 1 });
+        this.hp -= amount;
+        
+        showDamageText(this.scene, this.x, this.y, amount);
 
-                const up = this.inputs.up || this.keys.W.isDown || this.keys.UP.isDown;
-                const down = this.inputs.down || this.keys.S.isDown || this.keys.DOWN.isDown;
-                const left = this.inputs.left || this.keys.A.isDown || this.keys.LEFT.isDown;
-                const right = this.inputs.right || this.keys.D.isDown || this.keys.RIGHT.isDown;
+        const pct = Math.max(0, this.hp / this.maxHp);
+        this.hpBar.width = this.width * pct;
+        if (pct < 0.3) this.hpBar.fillColor = 0xff0000;
+        else if (pct < 0.6) this.hpBar.fillColor = 0xffff00;
 
-                if (left) vx = -this.playerSpeed;
-                else if (right) vx = this.playerSpeed;
-                if (up) vy = -this.playerSpeed;
-                else if (down) vy = this.playerSpeed;
+        if (this.hp <= 0) this.die();
+    }
 
-                this.player.setVelocity(vx, vy);
+    die() {
+        this.isDead = true;
+        this.hpBar.destroy();
+        this.hpBarBg.destroy();
+        const particles = this.scene.add.particles(this.x, this.y, 'pixel', { speed: 100, scale: { start: 1, end: 0 }, lifespan: 500, blendMode: 'ADD', tint: this.fillColor });
+        this.scene.time.delayedCall(500, () => particles.destroy());
+        this.destroy();
+    }
+}
 
-                // [修改點 3] 根據速度方向播放對應動畫
-                if (vx !== 0 || vy !== 0) {
-                    this.player.body.velocity.normalize().scale(this.playerSpeed);
-                    
-                    // 判斷要播放哪個方向的動畫 (ignoreIfPlaying: true)
-                    if (vx > 0) {
-                        this.player.anims.play('walk-right', true);
-                        this.lastFacing = 0;
-                    } else if (vx < 0) {
-                        this.player.anims.play('walk-left', true);
-                        this.lastFacing = 180;
-                    } else if (vy > 0) {
-                        this.player.anims.play('walk-down', true);
-                        this.lastFacing = 90;
-                    } else if (vy < 0) {
-                        this.player.anims.play('walk-up', true);
-                        this.lastFacing = -90;
-                    }
-                    
-                } else {
-                    // 沒移動時，停止動畫，停在最後一格
-                    this.player.anims.stop();
-                    
-                    // (進階優化) 如果希望停下來時顯示該方向的「站立圖」(通常是第0格)
-                    // 可以依據 lastFacing 來設定 Frame，例如：
-                    // if (this.lastFacing === 90) this.player.setFrame(0); // Down
-                    // else if (this.lastFacing === 180) this.player.setFrame(4); // Left
-                    // else if (this.lastFacing === 0) this.player.setFrame(8); // Right
-                    // else if (this.lastFacing === -90) this.player.setFrame(12); // Up
-                }
-            }
+// --- 投射物系統 ---
+class Projectile extends Phaser.GameObjects.Rectangle {
+    constructor(scene, x, y, target, damage, isEnemy, speed, lifeTime, color) {
+        super(scene, x, y, 10, 4, color || (isEnemy ? 0xff4444 : 0xffff00));
+        scene.add.existing(this);
+        scene.physics.add.existing(this);
+        this.damage = damage;
+        this.isEnemy = isEnemy;
+        this.bornTime = Date.now();
+        this.lifeTime = lifeTime || 1000;
+        
+        const angle = Phaser.Math.Angle.Between(x, y, target.x, target.y);
+        this.rotation = angle;
+        scene.physics.velocityFromRotation(angle, speed || 400, this.body.velocity);
+    }
+    update() { if (Date.now() - this.bornTime > this.lifeTime) this.destroy(); }
+}
 
-            // ... (shootBullet, hitEnemy, playerHitByEnemy, collectAmmo, spawnEnemy, spawnAmmoPack, updateTimer, updateHud 保持不變) ...
-            shootBullet() {
-                if (this.gameOver || this.playerAmmo <= 0) return;
-                const bullet = this.bullets.get(this.player.x, this.player.y);
-                if (bullet) {
-                    this.playerAmmo--;
-                    this.updateHud();
-                    bullet.fire(this.player.x, this.player.y, this.lastFacing);
-                }
-            }
-            hitEnemy(bullet, enemy) {
-                bullet.destroy();
-                const damage = Phaser.Math.Between(1, 2);
-                enemy.takeDamage(damage);
-                const txt = this.add.text(enemy.x, enemy.y - 20, damage, { fontSize: '16px', fill: '#fff' }).setOrigin(0.5);
-                this.tweens.add({ targets: txt, y: enemy.y - 50, alpha: 0, duration: 500, onComplete: () => txt.destroy() });
-                if (enemy.health <= 0) {
-                    enemy.destroy();
-                    this.playerScore += 10;
-                    this.updateHud();
-                }
-            }
-            playerHitByEnemy() {
-                if (this.gameOver) return;
-                this.gameOver = true;
-                this.physics.pause();
-                alert('遊戲結束！你被抓住了。');
-                location.reload();
-            }
-            collectAmmo(player, pack) {
-                pack.destroy();
-                this.playerAmmo = Math.min(this.playerAmmo + 10, this.maxPlayerAmmo);
-                this.updateHud();
-            }
-            spawnEnemy() {
-                if (this.gameOver) return;
-                const r = 500; const angle = Phaser.Math.Between(0, 360);
-                const x = this.player.x + Math.cos(angle) * r;
-                const y = this.player.y + Math.sin(angle) * r;
-                if (x > 0 && x < 2000 && y > 0 && y < 2000) {
-                    const enemy = this.enemies.get(x, y);
-                    if (enemy) enemy.init(this.player, this.enemySpeed);
-                }
-            }
-            spawnAmmoPack() {
-                if (this.gameOver) return;
-                this.ammoPacks.create(Phaser.Math.Between(100, 1900), Phaser.Math.Between(100, 1900), 'ammoPack');
-            }
-            updateTimer() {
-                if (this.gameOver) return;
-                this.gameTimer--;
-                this.updateHud();
-                if (this.gameTimer <= 0) {
-                    this.gameOver = true; this.physics.pause();
-                    alert('時間到！生存成功！\n分數: ' + this.playerScore); location.reload();
-                }
-            }
-            updateHud() {
-                document.getElementById('hud-ammo').innerText = `Ammo: ${this.playerAmmo}/${this.maxPlayerAmmo}`;
-                document.getElementById('hud-score').innerText = `Score: ${this.playerScore}`;
-                document.getElementById('hud-time').innerText = `Time: ${this.gameTimer}`;
-            }
-        }
+class MeleeSlash extends Projectile {
+    constructor(scene, x, y, target, damage, isEnemy) {
+        super(scene, x, y, target, damage, isEnemy, 600, 150, 0xffffff);
+        this.width = 16; this.height = 16; 
+        scene.tweens.add({
+            targets: this,
+            scaleX: 1.5, scaleY: 1.5, alpha: 0,
+            duration: 150
+        });
+    }
+}
 
-        // ... (Enemy 和 Bullet 類別保持不變) ...
-        class Enemy extends Phaser.Physics.Arcade.Sprite {
-            constructor(scene, x, y) { super(scene, x, y, 'enemy'); }
-            init(player, speed) {
-                this.player = player; this.speed = speed; this.health = 2;
-                this.setActive(true).setVisible(true); this.body.reset(this.x, this.y);
-            }
-            takeDamage(amount) {
-                this.health -= amount; this.setTint(0xff8888);
-                this.scene.time.delayedCall(100, () => this.clearTint());
-            }
-            update() {
-                if (!this.active || !this.player) return;
-                this.scene.physics.moveToObject(this, this.player, this.speed);
+// --- 英雄 (改為 Sprite) ---
+class Hero extends Phaser.Physics.Arcade.Sprite {
+    constructor(scene, x, y) {
+        // 嘗試使用 'player' 貼圖，如果沒載入成功 (例如在 file:// 環境)，Phaser 會顯示綠色/黑色缺圖框
+        // 我們可以在 create 裡做補救，或者在這裡檢查 texture
+        super(scene, x, y, 'player');
+        
+        scene.add.existing(this);
+        scene.physics.add.existing(this);
+        
+        // 視覺調整
+        this.setScale(0.5); 
+        
+        // 物理調整
+        this.body.setCollideWorldBounds(true);
+        this.body.pushable = false;
+        this.body.setSize(24, 24); 
+        
+        // 屬性複製自 Unit
+        this.hp = 300;
+        this.maxHp = 300;
+        this.isDead = false;
+        this.lastAttackTime = 0;
+        this.lastDamageTime = 0;
+        
+        this.speed = 220;
+        this.detectRange = 100; 
+        this.attackCooldown = 500;
+        
+        // 血條
+        this.hpBarBg = scene.add.rectangle(x, y - 30, 40, 4, 0x000000).setDepth(1);
+        this.hpBar = scene.add.rectangle(x, y - 30, 40, 4, 0x00ff00).setDepth(1);
+    }
+    
+    preUpdate(time, delta) {
+        super.preUpdate(time, delta);
+        if (this.isDead) return;
+        this.hpBarBg.setPosition(this.x, this.y - 30);
+        this.hpBar.setPosition(this.x, this.y - 30);
+    }
+
+    move() {
+        this.body.setVelocity(0);
+        if (cursors.left.isDown || wasd.left.isDown) this.body.setVelocityX(-this.speed);
+        else if (cursors.right.isDown || wasd.right.isDown) this.body.setVelocityX(this.speed);
+        if (cursors.up.isDown || wasd.up.isDown) this.body.setVelocityY(-this.speed);
+        else if (cursors.down.isDown || wasd.down.isDown) this.body.setVelocityY(this.speed);
+        this.body.velocity.normalize().scale(this.speed);
+    }
+    
+    update() {
+        if(this.isDead) return;
+        this.move();
+        
+        if (Date.now() - this.lastAttackTime > this.attackCooldown) {
+            let target = this.findTarget(enemies, this.detectRange);
+            if (!target) target = this.findTarget(wildLife, this.detectRange);
+            if (target) {
+                projectiles.add(new MeleeSlash(this.scene, this.x, this.y, target, 25, false));
+                this.lastAttackTime = Date.now();
             }
         }
+    }
+    
+    findTarget(group, range) {
+        let target = null; let minDist = range;
+        group.children.iterate(u => { 
+            if (u && !u.isDead && u.body) { 
+                let d = Phaser.Math.Distance.Between(this.x, this.y, u.x, u.y); 
+                if (d < minDist) { minDist = d; target = u; } 
+            } 
+        });
+        return target;
+    }
+    
+    takeDamage(amount) {
+        if (this.isDead) return;
+        this.scene.tweens.add({ targets: this, alpha: 0.2, duration: 50, yoyo: true, repeat: 1 });
+        this.hp -= amount;
+        showDamageText(this.scene, this.x, this.y, amount);
+        const pct = Math.max(0, this.hp / this.maxHp);
+        this.hpBar.width = 40 * pct;
+        if (pct < 0.3) this.hpBar.fillColor = 0xff0000;
+        else if (pct < 0.6) this.hpBar.fillColor = 0xffff00;
+        if (this.hp <= 0) this.die();
+    }
 
-        class Bullet extends Phaser.Physics.Arcade.Sprite {
-            constructor(scene, x, y) { super(scene, x, y, 'bullet'); }
-            fire(x, y, angle) {
-                this.body.reset(x, y); this.setActive(true).setVisible(true); this.setAngle(angle);
-                this.scene.physics.velocityFromAngle(angle, 400, this.body.velocity);
-                this.scene.time.delayedCall(2000, () => this.destroy());
+    die() {
+        this.isDead = true;
+        this.hpBar.destroy(); this.hpBarBg.destroy();
+        this.destroy();
+        endGame(false, "你戰死沙場，革命之火熄滅了。");
+    }
+}
+
+// --- 士兵類別 (玩家) ---
+class Soldier extends Unit {
+    constructor(scene, x, y) {
+        super(scene, x, y, 20, 20, 0x33ccff, 60, 60); 
+        this.speed = 180;
+        this.detectRange = 300;
+        this.guardRange = 120;
+        this.attackRange = 40; 
+        this.wanderOffset = new Phaser.Math.Vector2(Phaser.Math.Between(-50,50), Phaser.Math.Between(-50,50));
+    }
+    update(player, isAutoMode) {
+        if(this.isDead) return;
+        this.preUpdate();
+        
+        if (!isAutoMode) {
+            this.follow(player, false);
+            return; 
+        }
+        
+        let target = this.findTarget(enemies, this.detectRange);
+        if (!target && isAutoMode) target = this.findTarget(wildLife, this.detectRange);
+
+        if (target) {
+            let dist = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
+            if (dist <= this.attackRange) {
+                this.body.setVelocity(0);
+                if (Date.now() - this.lastAttackTime > 800) { 
+                    projectiles.add(new MeleeSlash(this.scene, this.x, this.y, target, 15, false));
+                    this.lastAttackTime = Date.now();
+                }
+            } else {
+                this.scene.physics.moveToObject(this, target, this.speed * 1.2);
             }
+        } else {
+            this.follow(player, isAutoMode);
+        }
+    }
+    findTarget(group, range) {
+        let target = null; let minDist = range;
+        group.children.iterate(u => { if (u && !u.isDead && u.body) { let d = Phaser.Math.Distance.Between(this.x, this.y, u.x, u.y); if (d < minDist) { minDist = d; target = u; } } });
+        return target;
+    }
+    follow(player, isAutoMode) {
+        let d = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y);
+        if (d > 60) this.scene.physics.moveTo(this, player.x + this.wanderOffset.x, player.y + this.wanderOffset.y, this.speed);
+        else this.body.setVelocity(0);
+    }
+}
+
+class Archer extends Unit {
+    constructor(scene, x, y) {
+        super(scene, x, y, 16, 16, 0x00ffff, 30, 30);
+        this.speed = 160;
+        this.detectRange = 350;
+        this.attackRange = 180;
+        this.wanderOffset = new Phaser.Math.Vector2(Phaser.Math.Between(-50,50), Phaser.Math.Between(-50,50));
+    }
+    update(player, isAutoMode) {
+        if(this.isDead) return;
+        this.preUpdate();
+        
+        if (!isAutoMode) {
+            this.follow(player, false);
+            return; 
+        }
+        
+        let target = this.findTarget(enemies, this.detectRange);
+        if (!target && isAutoMode) target = this.findTarget(wildLife, this.detectRange);
+
+        if (target) {
+            let d = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
+            if (d > this.attackRange) {
+                this.scene.physics.moveToObject(this, target, this.speed);
+            } else {
+                this.body.setVelocity(0);
+                if (Date.now() - this.lastAttackTime > 1200) {
+                    projectiles.add(new Projectile(this.scene, this.x, this.y, target, 15, false));
+                    this.lastAttackTime = Date.now();
+                }
+            }
+        } else {
+            this.follow(player, isAutoMode);
+        }
+    }
+    
+    findTarget(group, range) { 
+        let target = null; 
+        let minDist = range;
+        group.children.iterate(u => { 
+            if (u && !u.isDead && u.body) { 
+                let d = Phaser.Math.Distance.Between(this.x, this.y, u.x, u.y); 
+                if (d < minDist) { minDist = d; target = u; } 
+            } 
+        });
+        return target;
+    }
+    
+    follow(player, isAutoMode) { 
+        let d = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y);
+        // 一般跟隨
+        if (d > 70) this.scene.physics.moveTo(this, player.x + this.wanderOffset.x, player.y + this.wanderOffset.y, this.speed);
+        else this.body.setVelocity(0);
+    }
+}
+
+// --- 敵人單位 ---
+class EnemyUnit extends Unit {
+    constructor(scene, x, y, color, hp, speed, target) {
+        super(scene, x, y, 20, 20, color, hp, hp);
+        this.moveTarget = target; 
+        this.speed = speed;
+        this.attackRange = 40; 
+    }
+    
+    findAggroTarget() {
+        let target = null;
+        let minDist = 200; 
+        
+        let d = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y);
+        if (d < minDist) { minDist = d; target = player; }
+        
+        squad.children.iterate(s => {
+            if(s && !s.isDead) {
+                let sd = Phaser.Math.Distance.Between(this.x, this.y, s.x, s.y);
+                if (sd < minDist) { minDist = sd; target = s; }
+            }
+        });
+        return target;
+    }
+}
+
+class EnemySoldier extends EnemyUnit {
+    constructor(scene, x, y, target) {
+        super(scene, x, y, 0xff4444, 60, 130, target);
+    }
+    update() {
+        if(this.isDead) return;
+        this.preUpdate();
+        
+        let combatTarget = this.findAggroTarget();
+        let finalTarget = combatTarget || this.moveTarget;
+        
+        if (this.moveTarget instanceof Village) {
+             let distToVillage = Phaser.Math.Distance.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+             if (distToVillage < this.moveTarget.siegeRadius) {
+                 if (!combatTarget) { this.body.setVelocity(0); return; }
+             }
+        }
+        
+        if (finalTarget && !finalTarget.isDead) {
+            let dist = Phaser.Math.Distance.Between(this.x, this.y, finalTarget.x, finalTarget.y);
+            if (dist <= this.attackRange) {
+                this.body.setVelocity(0);
+                if (Date.now() - this.lastAttackTime > 1000) {
+                    projectiles.add(new MeleeSlash(this.scene, this.x, this.y, finalTarget, 10, true));
+                    this.lastAttackTime = Date.now();
+                }
+            }
+            else this.scene.physics.moveToObject(this, finalTarget, this.speed);
+        }
+    }
+}
+
+class EnemyArcher extends EnemyUnit {
+    constructor(scene, x, y, target) {
+        super(scene, x, y, 0xff8888, 40, 110, target); 
+        this.attackRange = 180;
+    }
+    update() {
+        if(this.isDead) return;
+        this.preUpdate();
+        
+        let combatTarget = this.findAggroTarget();
+        let finalTarget = combatTarget || this.moveTarget;
+        
+        if (!combatTarget && this.moveTarget instanceof Village) {
+             let distToVillage = Phaser.Math.Distance.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+             if (distToVillage < this.moveTarget.siegeRadius) { this.body.setVelocity(0); return; }
         }
 
-        const config = {
-            type: Phaser.AUTO,
-            scale: { mode: Phaser.Scale.RESIZE, parent: 'game-container', autoCenter: Phaser.Scale.CENTER_BOTH },
-            physics: { default: 'arcade', arcade: { debug: false } },
-            scene: MyGame
-        };
+        if (finalTarget && !finalTarget.isDead) {
+            let dist = Phaser.Math.Distance.Between(this.x, this.y, finalTarget.x, finalTarget.y);
+            if (dist > this.attackRange) {
+                this.scene.physics.moveToObject(this, finalTarget, this.speed);
+            } else {
+                this.body.setVelocity(0);
+                if (Date.now() - this.lastAttackTime > 1500) {
+                    projectiles.add(new Projectile(this.scene, this.x, this.y, finalTarget, 10, true));
+                    this.lastAttackTime = Date.now();
+                }
+            }
+        }
+    }
+}
 
-        const game = new Phaser.Game(config);
-    </script>
+class Carriage extends EnemyUnit {
+    constructor(scene, startX, startY, endX, endY) {
+        super(scene, startX, startY, 0xffd700, 300, 30, null);
+        this.width = 40; this.height = 60;
+        this.targetPos = new Phaser.Math.Vector2(endX, endY);
+        this.body.setCollideWorldBounds(true);
+        this.body.setImmovable(true);
+        this.scene.physics.moveTo(this, endX, endY, this.speed);
+        this.hpBarBg.destroy(); this.hpBar.destroy();
+        this.hpBarBg = scene.add.rectangle(this.x, this.y, 40, 4, 0x000000).setDepth(1);
+        this.hpBar = scene.add.rectangle(this.x, this.y, 40, 4, 0x00ff00).setDepth(1);
+    }
+    die() {
+        updateGold(600); updateRep(150);
+        showToast(this.scene, "搶得 $600 + 150 Rep!", "gold"); super.die();
+    }
+}
+
+// --- 野生動物 ---
+class Deer extends Unit {
+    constructor(scene, x, y) { super(scene, x, y, 16, 16, 0xc2b280, 15); this.speed=40; this.timer=0; this.body.setCollideWorldBounds(true); }
+    update() { if(this.isDead)return; this.preUpdate(); this.timer++; if(this.timer>100){ if(Math.random()>0.3) this.scene.physics.velocityFromAngle(Phaser.Math.Between(0,360),40,this.body.velocity); else this.body.setVelocity(0); this.timer=0; } }
+    die() { updateGold(15); super.die(); }
+}
+
+class Wolf extends Unit {
+    constructor(scene, x, y) { super(scene, x, y, 20, 20, 0x808080, 40); this.speed=100; this.body.setCollideWorldBounds(true); this.attackRange = 40; }
+    update() { 
+        if(this.isDead)return; this.preUpdate(); 
+        let target = null; let minDist = 200;
+        let d = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y);
+        if (d < minDist) { minDist = d; target = player; }
+        squad.children.iterate(s => { if(s && !s.isDead) { let sd = Phaser.Math.Distance.Between(this.x, this.y, s.x, s.y); if (sd < minDist) { minDist = sd; target = s; } } });
+        wildLife.children.iterate(w => { if(w instanceof Deer && !w.isDead) { let wd = Phaser.Math.Distance.Between(this.x, this.y, w.x, w.y); if (wd < minDist) { minDist = wd; target = w; } } });
+        
+        if (target) {
+            if (minDist <= this.attackRange) {
+                this.body.setVelocity(0);
+                if (Date.now() - this.lastAttackTime > 1000) {
+                    projectiles.add(new MeleeSlash(this.scene, this.x, this.y, target, 10, true));
+                    this.lastAttackTime = Date.now();
+                }
+            } else this.scene.physics.moveToObject(this, target, this.speed);
+        } else {
+             if (Math.random() < 0.02) this.scene.physics.velocityFromAngle(Phaser.Math.Between(0,360), 50, this.body.velocity);
+        }
+    }
+    die() { updateGold(25); super.die(); }
+}
+
+// --- 村莊與導演 ---
+class Village {
+    constructor(scene, x, y, name) {
+        this.scene = scene; this.x = x; this.y = y; this.name = name;
+        this.level = 1; this.stock = 3; this.maxStock = 3; this.passiveTimer = 0; this.stockTimer = 0;
+        this.siegeRadius = 90; this.integrity = 100; this.maxIntegrity = 100;
+        this.siegeZone = scene.add.circle(x, y, this.siegeRadius, 0xff0000, 0.1); scene.physics.add.existing(this.siegeZone, true);
+        this.building = scene.add.rectangle(x, y, 60, 60, 0x8b4513); scene.physics.add.existing(this.building, true); obstacles.add(this.building);
+        this.interactZone = scene.add.circle(x, y, 50, 0xffff00, 0.2);
+        this.nameText = scene.add.text(x, y - 50, name, {fontSize: '16px', fontWeight:'bold'}).setOrigin(0.5);
+        this.levelText = scene.add.text(x, y - 35, "Lv.1", {fontSize: '14px', color:'#aaa'}).setOrigin(0.5);
+        this.siegeBar = scene.add.rectangle(x, y + 40, 60, 6, 0x00ff00).setOrigin(0.5);
+    }
+    update(delta, enemies) {
+        let siegeCount = 0;
+        enemies.children.iterate(e => { if (e && !e.isDead && Phaser.Math.Distance.Between(this.x, this.y, e.x, e.y) < this.siegeRadius) siegeCount++; });
+        if (siegeCount > 0 && this.level > 1) {
+            this.integrity -= siegeCount * (delta/1000) * 5;
+            if (this.integrity <= 0) this.downgrade();
+            this.siegeZone.fillColor = 0xff0000; this.siegeZone.fillAlpha = 0.3;
+        } else {
+            if (this.integrity < this.maxIntegrity) this.integrity += (delta/1000) * 2;
+            this.siegeZone.fillColor = 0x000000; this.siegeZone.fillAlpha = 0.05;
+        }
+        this.siegeBar.width = 60 * (this.integrity / this.maxIntegrity);
+        this.siegeBar.fillColor = (siegeCount > 0) ? 0xff0000 : 0x00ff00;
+        if (this.level > 1) {
+            this.passiveTimer += delta;
+            if (this.passiveTimer > 5000) { let income = (this.level - 1) * 5; updateRep(income); this.passiveTimer = 0; }
+        }
+        if (this.stock < this.maxStock) { this.stockTimer += delta; if (this.stockTimer > 6000) { this.stock++; this.stockTimer = 0; } }
+    }
+    upgrade() {
+        if (this.level >= 5) return false;
+        let cost = this.level * 100;
+        if (gold >= cost) {
+            updateGold(-cost); this.level++; this.integrity = 100; this.maxStock = 2 + this.level; this.stock = this.maxStock;
+            this.refreshVisuals(); showToast(this.scene, `${this.name} 升級至 Lv.${this.level}!`, "cyan"); return true;
+        } return false;
+    }
+    downgrade() { this.level = 1; this.integrity = 100; updateRep(-200); showToast(this.scene, `${this.name} 被攻陷了！`, "red"); this.refreshVisuals(); }
+    recruit(type) { if (this.stock <= 0) return false; let cost = (type === 'H') ? 20 : 30; if (gold >= cost) { updateGold(-cost); this.stock--; return true; } return false; }
+    refreshVisuals() { this.levelText.setText(`Lv.${this.level}`); let colors = [0x8b4513, 0xcd853f, 0xd2691e, 0xa0522d, 0x800000]; this.building.fillColor = colors[this.level-1] || 0x8b4513; }
+}
+
+class GameDirector {
+    constructor(scene) { this.scene = scene; this.timers = { patrol: 0, caravan: 0 }; }
+    update(delta) {
+        if (isGameOver) return;
+        this.timers.patrol += delta; this.timers.caravan += delta;
+        let timeFactor = (300 - gameTimeLeft) / 60; let repFactor = reputation / 500;
+        let difficulty = 1 + (timeFactor * 0.5) + (repFactor * 0.5);
+        let patrolInterval = Math.max(10000, 40000 - (difficulty * 4000));
+        if (this.timers.patrol > patrolInterval) { this.spawnPatrol(difficulty); this.timers.patrol = 0; }
+        if (this.timers.caravan > 35000) { this.spawnCaravan(difficulty); this.timers.caravan = 0; }
+    }
+    spawnPatrol(difficulty) {
+        let targets = [player]; villages.forEach(v => { if(v.level > 1) targets.push(v); });
+        let target = targets[Phaser.Math.Between(0, targets.length-1)];
+        let msg = (target === player) ? "巡邏隊正在搜捕你！" : `巡邏隊正在前往 ${target.name}！`;
+        showToast(this.scene, msg, "red");
+        let count = Math.floor(2 + difficulty); let pos = getRandomEdgePos(this.scene, 100);
+        for(let i=0; i<count; i++) {
+            let px = pos.x + Phaser.Math.Between(-30,30); let py = pos.y + Phaser.Math.Between(-30,30);
+            if (Math.random() < 0.3) enemies.add(new EnemyArcher(this.scene, px, py, target)); else enemies.add(new EnemySoldier(this.scene, px, py, target));
+        }
+    }
+    spawnCaravan(difficulty) {
+        let startX, startY, endX, endY; if (Math.random() > 0.5) { startX = 50; startY = Phaser.Math.Between(200, 1800); endX = 1950; endY = Phaser.Math.Between(200, 1800); } else { startX = Phaser.Math.Between(200, 1800); startY = 50; endX = Phaser.Math.Between(200, 1800); endY = 1950; }
+        let carriage = new Carriage(this.scene, startX, startY, endX, endY); enemies.add(carriage);
+        let guardCount = Math.floor(2 + difficulty);
+        for(let i=0; i<guardCount; i++) {
+            let px = startX + Phaser.Math.Between(-30,30); let py = startY + Phaser.Math.Between(-30,30);
+            if (Math.random() < 0.3) enemies.add(new EnemyArcher(this.scene, px, py, player)); else enemies.add(new EnemySoldier(this.scene, px, py, player));
+        }
+    }
+}
+
+// --- Main Setup ---
+const config = {
+    type: Phaser.AUTO, width: window.innerWidth, height: window.innerHeight, parent: 'game-container',
+    physics: { default: 'arcade', arcade: { gravity: { y: 0 }, debug: false } },
+    scene: { preload: preload, create: create, update: update },
+    backgroundColor: '#3b7d4f'
+};
+
+game = new Phaser.Game(config);
+
+function preload() {
+    this.load.image('player', 'https://github.com/darkbearlab/gunFightSurvivor/blob/main/player.png?raw=true');
+    const graphics = this.make.graphics({x: 0, y: 0, add: false});
+    graphics.fillStyle(0xffffff, 1); graphics.fillRect(0, 0, 4, 4); graphics.generateTexture('pixel', 4, 4);
+}
+
+function getRandomEdgePos(scene, margin) {
+    let x, y; if (Math.random() > 0.5) { x = Math.random() > 0.5 ? margin : 2000 - margin; y = Phaser.Math.Between(margin, 2000 - margin); } else { y = Math.random() > 0.5 ? margin : 2000 - margin; x = Phaser.Math.Between(margin, 2000 - margin); } return {x, y};
+}
+
+function create() {
+    this.physics.world.setBounds(0, 0, 2000, 2000);
+    this.add.grid(1000, 1000, 2000, 2000, 50, 50, 0x3b7d4f, 0, 0x000000, 0.1);
+
+    obstacles = this.physics.add.staticGroup();
+    // [修正] 將所有 Group 的 runChildUpdate 設為 false，避免 Phaser 自動呼叫 update(time, delta) 導致參數錯誤
+    squad = this.add.group({ runChildUpdate: false });
+    enemies = this.add.group({ runChildUpdate: false });
+    wildLife = this.add.group({ runChildUpdate: false });
+    projectiles = this.add.group({ runChildUpdate: false });
+
+    for (let i = 0; i < 80; i++) {
+        let tx = Phaser.Math.Between(50, 1950); let ty = Phaser.Math.Between(50, 1950); let clear = true;
+        [[400,400], [1000,1000], [1600,1600]].forEach(p => { if(Math.abs(tx-p[0])<150 && Math.abs(ty-p[1])<150) clear = false; });
+        if (clear) { let tree = this.add.rectangle(tx, ty, 40, 40, 0x1e4726); this.physics.add.existing(tree, true); obstacles.add(tree); }
+    }
+
+    villages = [ new Village(this, 400, 400, "北境村"), new Village(this, 1000, 1000, "中央市集"), new Village(this, 1600, 1600, "南風鎮") ];
+    player = new Hero(this, 1000, 1100);
+    // [修正] Zoom 改回 1.0
+    this.cameras.main.startFollow(player, true, 0.09, 0.09); this.cameras.main.setZoom(1.0);
+    
+    for(let i=0; i<12; i++) { let p=getRandomEdgePos(this, 100); wildLife.add(new Deer(this, p.x, p.y)); }
+    for(let i=0; i<5; i++) { let p=getRandomEdgePos(this, 100); wildLife.add(new Wolf(this, p.x, p.y)); }
+
+    // 物理碰撞
+    this.physics.add.collider(player, obstacles); this.physics.add.collider(player, enemies); this.physics.add.collider(player, wildLife);
+    this.physics.add.collider(squad, obstacles); this.physics.add.collider(enemies, obstacles);
+    this.physics.add.collider(wildLife, obstacles);
+    this.physics.add.collider(squad, squad);
+    this.physics.add.collider(squad, enemies);
+
+    // 傷害判定
+    this.physics.add.overlap(projectiles, enemies, (p, e) => { if(!p.isEnemy) { e.takeDamage(p.damage); p.destroy(); } });
+    this.physics.add.overlap(projectiles, wildLife, (p, e) => { if(!p.isEnemy) { e.takeDamage(p.damage); p.destroy(); } });
+    this.physics.add.overlap(projectiles, squad, (p, s) => { if(p.isEnemy) { s.takeDamage(p.damage); p.destroy(); } });
+    this.physics.add.overlap(projectiles, player, (p, h) => { if(p.isEnemy) { h.takeDamage(p.damage); p.destroy(); } });
+
+    uiTexts.gold = document.getElementById('gold-display');
+    uiTexts.squad = document.getElementById('squad-count');
+    uiTexts.enemy = document.getElementById('enemy-count');
+    uiTexts.mode = document.getElementById('mode-indicator');
+    uiTexts.time = document.getElementById('time-display');
+    uiTexts.rep = document.getElementById('rep-display');
+    uiTexts.repBar = document.getElementById('rep-bar');
+    updateGold(0); updateRep(0);
+
+    cursors = this.input.keyboard.createCursorKeys();
+    wasd = this.input.keyboard.addKeys({ up: 'W', down: 'S', left: 'A', right: 'D' });
+    keys = this.input.keyboard.addKeys({ H: 'H', J: 'J', U: 'U', SPACE: 'SPACE' });
+    
+    director = new GameDirector(this);
+    
+    this.time.addEvent({ delay: 1000, callback: () => {
+        if (!isGameOver) {
+            gameTimeLeft--;
+            let m = Math.floor(gameTimeLeft/60); let s = gameTimeLeft%60;
+            uiTexts.time.innerText = `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+            checkGameOver();
+        }
+    }, loop: true });
+    
+    // Fallback: 如果圖片載入失敗，會顯示預設的綠色方塊 (Phaser 預設行為)
+    // 但為了保險，可以在這裡檢查 texture 是否存在
+    if (!this.textures.exists('player')) {
+        console.log("Player texture missing, fallback logic active.");
+    }
+}
+
+function update(time, delta) {
+    if (isGameOver) return;
+    
+    player.update();
+    director.update(delta);
+    
+    villages.forEach(v => v.update(delta, enemies));
+    
+    if (Phaser.Input.Keyboard.JustDown(keys.SPACE)) {
+        isAutoAttackMode = !isAutoAttackMode;
+        uiTexts.mode.innerText = isAutoAttackMode ? "⚔️ 自動攻擊" : "🛡️ 跟隨";
+        uiTexts.mode.style.color = isAutoAttackMode ? "red" : "lime";
+    }
+    
+    let activeVillage = null;
+    villages.forEach(v => {
+        if (Phaser.Math.Distance.Between(player.x, player.y, v.x, v.y) < 60) activeVillage = v;
+    });
+    
+    if (activeVillage) {
+        if (Phaser.Input.Keyboard.JustDown(keys.U)) activeVillage.upgrade();
+        if (Phaser.Input.Keyboard.JustDown(keys.H)) if(activeVillage.recruit('H')) squad.add(new Soldier(this, player.x, player.y));
+        if (Phaser.Input.Keyboard.JustDown(keys.J)) if(activeVillage.recruit('J')) squad.add(new Archer(this, player.x, player.y));
+    }
+    
+    squad.children.iterate(u => u && u.update(player, isAutoAttackMode));
+    enemies.children.iterate(u => u && u.update && u.update());
+    wildLife.children.iterate(u => u && u.update && u.update());
+    projectiles.children.iterate(p => p && p.update());
+
+    uiTexts.squad.innerText = squad.countActive(true);
+    uiTexts.enemy.innerText = enemies.countActive(true);
+}
+
+window.addEventListener('resize', () => game.scale.resize(window.innerWidth, window.innerHeight));
+</script>
+
 </body>
 </html>
