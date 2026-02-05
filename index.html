@@ -546,7 +546,7 @@ const config = {
 game = new Phaser.Game(config);
 
 function preload() {
-    this.load.image('player', 'https://github.com/darkbearlab/gunFightSurvivor/blob/main/player.png?raw=true');
+    this.load.image('player', 'https://raw.githubusercontent.com/darkbearlab/gunFightSurvivor/refs/heads/main/player.png');
     const graphics = this.make.graphics({x: 0, y: 0, add: false});
     graphics.fillStyle(0xffffff, 1); graphics.fillRect(0, 0, 4, 4); graphics.generateTexture('pixel', 4, 4);
 }
