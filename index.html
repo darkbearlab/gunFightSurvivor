@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>羅賓漢戰記 - Phase 11 (Fixed)</title>
+    <title>羅賓漢戰記 - Phase 12</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
         body { 
@@ -99,7 +99,7 @@ let permanentBuffs = { gold: false, rep: false };
 
 let joyStick = { active: false, startX: 0, startY: 0, currX: 0, currY: 0, vec: new Phaser.Math.Vector2(0,0) };
 
-let squad, enemies, wildLife, obstacles, projectiles, loots;
+let squad, enemies, wildLife, obstacles, projectiles, loots, neutrals;
 let villages = [];
 let manors = [];
 let uiTexts = {}; 
@@ -184,7 +184,7 @@ class Loot extends Phaser.GameObjects.Text {
     }
 }
 
-// --- 單位 ---
+// --- 單位基礎 ---
 class Unit extends Phaser.GameObjects.Rectangle {
     constructor(scene, x, y, width, height, color, hp, maxHp) {
         super(scene, x, y, width, height, color);
@@ -195,7 +195,15 @@ class Unit extends Phaser.GameObjects.Rectangle {
         this.hpBar = scene.add.rectangle(x, y - height, width, 4, 0x00ff00).setDepth(1);
     }
     preUpdate() { if (this.isDead) return; this.hpBarBg.setPosition(this.x, this.y - this.height/2 - 5); this.hpBar.setPosition(this.x, this.y - this.height/2 - 5); }
-    takeDamage(amount) { if (this.isDead) return; this.scene.tweens.add({ targets: this, alpha: 0.2, duration: 50, yoyo: true, repeat: 1 }); this.hp -= amount; showDamageText(this.scene, this.x, this.y, amount); const pct = Math.max(0, this.hp / this.maxHp); this.hpBar.width = this.width * pct; if (pct < 0.3) this.hpBar.fillColor = 0xff0000; else if (pct < 0.6) this.hpBar.fillColor = 0xffff00; if (this.hp <= 0) this.die(); }
+    takeDamage(amount) { 
+        if (this.isDead) return; 
+        this.hp -= amount; 
+        showDamageText(this.scene, this.x, this.y, amount); 
+        const pct = Math.max(0, this.hp / this.maxHp); 
+        this.hpBar.width = this.width * pct; 
+        if (pct < 0.3) this.hpBar.fillColor = 0xff0000; else if (pct < 0.6) this.hpBar.fillColor = 0xffff00; 
+        if (this.hp <= 0) this.die(); 
+    }
     die() {
         this.isDead = true; this.hpBar.destroy(); this.hpBarBg.destroy();
         if (Math.random() < 0.2) { let r = Math.random(); let type = 'gold'; if (r < 0.4) type = 'heal'; else if (r < 0.5) type = 'buff'; loots.add(new Loot(this.scene, this.x, this.y, type)); }
@@ -224,6 +232,7 @@ class MeleeSlash extends Projectile {
     }
 }
 
+// --- 英雄 ---
 class Hero extends Phaser.Physics.Arcade.Sprite {
     constructor(scene, x, y) {
         super(scene, x, y, 'player', 0);
@@ -254,12 +263,14 @@ class Hero extends Phaser.Physics.Arcade.Sprite {
     update() {
         if(this.isDead) return; this.move();
         if (Date.now() - this.lastAttackTime > this.attackCooldown) {
-            let target = this.findTarget(enemies, this.detectRange); if (!target) target = this.findTarget(wildLife, this.detectRange);
+            let target = this.findTarget(enemies, this.detectRange); 
+            if (!target) target = this.findTarget(wildLife, this.detectRange);
+            if (!target) target = this.findTarget(neutrals, this.detectRange); // 找中立怪
             if (target) { let dmg = 25 * this.damageMultiplier; projectiles.add(new MeleeSlash(this.scene, this.x, this.y, target, dmg, false)); this.lastAttackTime = Date.now(); }
         }
     }
     findTarget(group, range) { let target = null; let minDist = range; group.children.iterate(u => { if (u && !u.isDead && u.body) { let d = Phaser.Math.Distance.Between(this.x, this.y, u.x, u.y); if (d < minDist) { minDist = d; target = u; } } }); return target; }
-    takeDamage(amount) { if (this.isDead) return; this.scene.tweens.add({ targets: this, alpha: 0.2, duration: 50, yoyo: true, repeat: 1 }); this.hp -= amount; showDamageText(this.scene, this.x, this.y, amount); const pct = Math.max(0, this.hp / this.maxHp); this.hpBar.width = 40 * pct; if (pct < 0.3) this.hpBar.fillColor = 0xff0000; else if (pct < 0.6) this.hpBar.fillColor = 0xffff00; if (this.hp <= 0) this.die(); }
+    takeDamage(amount) { if (this.isDead) return; this.hp -= amount; showDamageText(this.scene, this.x, this.y, amount); const pct = Math.max(0, this.hp / this.maxHp); this.hpBar.width = 40 * pct; if (pct < 0.3) this.hpBar.fillColor = 0xff0000; else if (pct < 0.6) this.hpBar.fillColor = 0xffff00; if (this.hp <= 0) this.die(); }
     die() { this.isDead = true; this.hpBar.destroy(); this.hpBarBg.destroy(); this.destroy(); endGame(false, "你戰死沙場，革命之火熄滅了。"); }
 }
 
@@ -268,7 +279,9 @@ class Soldier extends Unit {
     update(player, isAutoMode) {
         if(this.isDead) return; this.preUpdate();
         if (!isAutoMode) { this.follow(player, false); return; }
-        let target = this.findTarget(enemies, this.detectRange); if (!target && isAutoMode) target = this.findTarget(wildLife, this.detectRange);
+        let target = this.findTarget(enemies, this.detectRange); 
+        if (!target) target = this.findTarget(neutrals, this.detectRange);
+        if (!target && isAutoMode) target = this.findTarget(wildLife, this.detectRange);
         if (target) { let dist = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y); if (dist <= this.attackRange) { this.body.setVelocity(0); if (Date.now() - this.lastAttackTime > 800) { projectiles.add(new MeleeSlash(this.scene, this.x, this.y, target, 15 * (player.damageMultiplier || 1), false)); this.lastAttackTime = Date.now(); } } else { this.scene.physics.moveToObject(this, target, this.speed * 1.2); } } else { this.follow(player, isAutoMode); }
     }
     findTarget(group, range) { let target = null; let minDist = range; group.children.iterate(u => { if (u && !u.isDead && u.body) { let d = Phaser.Math.Distance.Between(this.x, this.y, u.x, u.y); if (d < minDist) { minDist = d; target = u; } } }); return target; }
@@ -279,7 +292,9 @@ class Archer extends Unit {
     update(player, isAutoMode) {
         if(this.isDead) return; this.preUpdate();
         if (!isAutoMode) { this.follow(player, false); return; }
-        let target = this.findTarget(enemies, this.detectRange); if (!target && isAutoMode) target = this.findTarget(wildLife, this.detectRange);
+        let target = this.findTarget(enemies, this.detectRange); 
+        if (!target) target = this.findTarget(neutrals, this.detectRange);
+        if (!target && isAutoMode) target = this.findTarget(wildLife, this.detectRange);
         if (target) { let d = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y); if (d > this.attackRange) { this.scene.physics.moveToObject(this, target, this.speed); } else { this.body.setVelocity(0); if (Date.now() - this.lastAttackTime > 1200) { projectiles.add(new Projectile(this.scene, this.x, this.y, target, 15 * (player.damageMultiplier || 1), false)); this.lastAttackTime = Date.now(); } } } else { this.follow(player, isAutoMode); }
     }
     findTarget(group, range) { let target = null; let minDist = range; group.children.iterate(u => { if (u && !u.isDead && u.body) { let d = Phaser.Math.Distance.Between(this.x, this.y, u.x, u.y); if (d < minDist) { minDist = d; target = u; } } }); return target; }
@@ -310,60 +325,51 @@ class EnemyArcher extends EnemyUnit {
         if (finalTarget && !finalTarget.isDead) { let dist = Phaser.Math.Distance.Between(this.x, this.y, finalTarget.x, finalTarget.y); if (dist > this.attackRange) { this.scene.physics.moveToObject(this, finalTarget, this.speed); } else { this.body.setVelocity(0); if (Date.now() - this.lastAttackTime > 1500) { projectiles.add(new Projectile(this.scene, this.x, this.y, finalTarget, 10, true)); this.lastAttackTime = Date.now(); } } }
     }
 }
+
 class Carriage extends EnemyUnit {
-    constructor(scene, startX, startY, endX, endY) { super(scene, startX, startY, 0xffd700, 300, 30, null); this.width = 40; this.height = 60; this.targetPos = new Phaser.Math.Vector2(endX, endY); this.body.setCollideWorldBounds(true); this.body.setCircle(25, -5, 5); this.body.setMass(1000); this.hpBarBg.destroy(); this.hpBar.destroy(); this.hpBarBg = scene.add.rectangle(this.x, this.y, 40, 4, 0x000000).setDepth(1); this.hpBar = scene.add.rectangle(this.x, this.y, 40, 4, 0x00ff00).setDepth(1); }
-    update() { if(this.isDead) return; this.preUpdate(); let dist = Phaser.Math.Distance.Between(this.x, this.y, this.targetPos.x, this.targetPos.y); if (dist < 10) { this.destroy(); } else { this.scene.physics.moveTo(this, this.targetPos.x, this.targetPos.y, this.speed); } }
+    constructor(scene, startX, startY, endX, endY) { 
+        super(scene, startX, startY, 0xffd700, 300, 30, null); 
+        this.width = 40; this.height = 60; 
+        this.targetPos = new Phaser.Math.Vector2(endX, endY); 
+        this.body.setCollideWorldBounds(true); 
+        this.body.setCircle(15, 5, 15); 
+        this.body.setImmovable(true); 
+        this.hpBarBg.destroy(); this.hpBar.destroy(); 
+        this.hpBarBg = scene.add.rectangle(this.x, this.y, 40, 4, 0x000000).setDepth(1); 
+        this.hpBar = scene.add.rectangle(this.x, this.y, 40, 4, 0x00ff00).setDepth(1); 
+    }
+    update() {
+        if(this.isDead) return; 
+        this.preUpdate();
+        let dist = Phaser.Math.Distance.Between(this.x, this.y, this.targetPos.x, this.targetPos.y);
+        if (dist < 10) { this.destroy(); } else { this.scene.physics.moveTo(this, this.targetPos.x, this.targetPos.y, this.speed); }
+    }
     die() { updateGold(600); updateRep(150); showToast(this.scene, "搶得 $600 + 150 Rep!", "gold"); super.die(); }
 }
 
-// [修正] Manor 邏輯修正：核心死亡處理
 class Manor {
     constructor(scene, x, y, type) {
         this.scene = scene; this.x = x; this.y = y; this.type = type; 
         this.maxGuards = 8; this.spawnTimer = 0; this.destroyed = false;
-        
-        // 建築 (Visual & Obstacle)
-        this.building = scene.add.rectangle(x, y, 80, 80, 0x800080); // 紫色
+        this.building = scene.add.rectangle(x, y, 80, 80, 0x800080); 
         scene.physics.add.existing(this.building, true);
         obstacles.add(this.building);
-        
-        // 核心血量 (Hitbox & Health)
-        // [修正] 核心大小與建築一致，確保好打
         this.core = new EnemyUnit(scene, x, y, 0x000000, 1000, 0, null); 
-        this.core.setSize(80, 80); 
-        this.core.body.setSize(80, 80); 
-        this.core.body.setImmovable(true);
-        this.core.setVisible(false);
+        this.core.setSize(80, 80); this.core.body.setSize(80, 80); this.core.body.setImmovable(true); this.core.setVisible(false);
         enemies.add(this.core);
-        
-        // [關鍵修正] 覆寫 die 方法以確保觸發 destroyManor
-        // 這裡不能用 super，所以手動處理死亡邏輯
         this.core.die = () => {
-            this.core.isDead = true;
-            this.core.hpBar.destroy();
-            this.core.hpBarBg.destroy();
-            
-            // 掉寶邏輯
+            this.core.isDead = true; this.core.hpBar.destroy(); this.core.hpBarBg.destroy();
             if (Math.random() < 0.5) loots.add(new Loot(this.scene, this.x, this.y, 'gold'));
-            
-            // 粒子特效
             const particles = this.scene.add.particles(this.x, this.y, 'pixel', { speed: 150, scale: { start: 2, end: 0 }, lifespan: 800, blendMode: 'ADD', tint: 0x800080, quantity: 20 });
             this.scene.time.delayedCall(800, () => particles.destroy());
-            
-            this.core.destroy();
-            this.destroyManor(); // 觸發莊園銷毀
+            this.core.destroy(); this.destroyManor();
         };
-        
         let label = (type === 'gold') ? "黃金莊園" : "貴族莊園";
         this.label = scene.add.text(x, y-60, label, {fontSize:'16px', fontWeight:'bold', color:'violet'}).setOrigin(0.5);
     }
-    
     update(delta) {
         if (this.destroyed || this.core.isDead) return;
-        
-        let guards = 0;
-        enemies.children.iterate(e => { if(e.tetherUnit === this.core) guards++; });
-        
+        let guards = 0; enemies.children.iterate(e => { if(e.tetherUnit === this.core) guards++; });
         if (guards < this.maxGuards) {
             this.spawnTimer += delta;
             if (this.spawnTimer > 5000) {
@@ -374,29 +380,166 @@ class Manor {
             }
         }
     }
-    
     destroyManor() {
-        this.destroyed = true;
-        this.building.fillColor = 0x333333; // [修正] 變深灰
-        this.label.setText("已摧毀");
-        this.label.setColor("#aaa");
-        
-        if (this.type === 'gold') {
-            permanentBuffs.gold = true;
-            document.getElementById('buff-gold').style.display = 'inline'; // 顯示 UI
-            showToast(this.scene, "獲得黃金聖杯！(每秒+$)", "gold");
-        } else {
-            permanentBuffs.rep = true;
-            document.getElementById('buff-rep').style.display = 'inline'; // 顯示 UI
-            showToast(this.scene, "獲得貴族印章！(每秒+Rep)", "cyan");
-        }
-        updateGold(1000);
-        updateRep(500);
+        this.destroyed = true; this.building.fillColor = 0x333333; 
+        this.label.setText("已摧毀"); this.label.setColor("#aaa");
+        if (this.type === 'gold') { permanentBuffs.gold = true; document.getElementById('buff-gold').style.display = 'inline'; showToast(this.scene, "獲得黃金聖杯！(每秒+$)", "gold"); } else { permanentBuffs.rep = true; document.getElementById('buff-rep').style.display = 'inline'; showToast(this.scene, "獲得貴族印章！(每秒+Rep)", "cyan"); }
+        updateGold(1000); updateRep(500);
     }
 }
 
-class Deer extends Unit { constructor(scene, x, y) { super(scene, x, y, 16, 16, 0xc2b280, 15); this.speed=40; this.timer=0; this.body.setCollideWorldBounds(true); } update() { if(this.isDead)return; this.preUpdate(); this.timer++; if(this.timer>100){ if(Math.random()>0.3) this.scene.physics.velocityFromAngle(Phaser.Math.Between(0,360),40,this.body.velocity); else this.body.setVelocity(0); this.timer=0; } } die() { updateGold(15); super.die(); } }
-class Wolf extends Unit { constructor(scene, x, y) { super(scene, x, y, 20, 20, 0x808080, 40); this.speed=100; this.body.setCollideWorldBounds(true); this.attackRange = 40; } update() { if(this.isDead)return; this.preUpdate(); let target = null; let minDist = 200; let d = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y); if (d < minDist) { minDist = d; target = player; } squad.children.iterate(s => { if(s && !s.isDead) { let sd = Phaser.Math.Distance.Between(this.x, this.y, s.x, s.y); if (sd < minDist) { minDist = sd; target = s; } } }); wildLife.children.iterate(w => { if(w instanceof Deer && !w.isDead) { let wd = Phaser.Math.Distance.Between(this.x, this.y, w.x, w.y); if (wd < minDist) { minDist = wd; target = w; } } }); if (target) { if (minDist <= this.attackRange) { this.body.setVelocity(0); if (Date.now() - this.lastAttackTime > 1000) { projectiles.add(new MeleeSlash(this.scene, this.x, this.y, target, 10, true)); this.lastAttackTime = Date.now(); } } else this.scene.physics.moveToObject(this, target, this.speed); } else { if (Math.random() < 0.02) this.scene.physics.velocityFromAngle(Phaser.Math.Between(0,360), 50, this.body.velocity); } } die() { updateGold(25); super.die(); } }
+class Deer extends Unit {
+    constructor(scene, x, y) { super(scene, x, y, 16, 16, 0xc2b280, 15); this.speed=40; this.timer=0; this.body.setCollideWorldBounds(true); }
+    update() { if(this.isDead)return; this.preUpdate(); this.timer++; if(this.timer>100){ if(Math.random()>0.3) this.scene.physics.velocityFromAngle(Phaser.Math.Between(0,360),40,this.body.velocity); else this.body.setVelocity(0); this.timer=0; } }
+    die() { updateGold(15); super.die(); }
+}
+
+class Wolf extends Unit {
+    constructor(scene, x, y) { super(scene, x, y, 20, 20, 0x808080, 40); this.speed=100; this.body.setCollideWorldBounds(true); this.attackRange = 40; }
+    update() { 
+        if(this.isDead)return; this.preUpdate(); 
+        let target = null; let minDist = 200;
+        let d = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y);
+        if (d < minDist) { minDist = d; target = player; }
+        squad.children.iterate(s => { if(s && !s.isDead) { let sd = Phaser.Math.Distance.Between(this.x, this.y, s.x, s.y); if (sd < minDist) { minDist = sd; target = s; } } });
+        wildLife.children.iterate(w => { if(w instanceof Deer && !w.isDead) { let wd = Phaser.Math.Distance.Between(this.x, this.y, w.x, w.y); if (wd < minDist) { minDist = wd; target = w; } } });
+        if (target) {
+            if (minDist <= this.attackRange) {
+                this.body.setVelocity(0);
+                if (Date.now() - this.lastAttackTime > 1000) { projectiles.add(new MeleeSlash(this.scene, this.x, this.y, target, 10, true)); this.lastAttackTime = Date.now(); }
+            } else this.scene.physics.moveToObject(this, target, this.speed);
+        } else { if (Math.random() < 0.02) this.scene.physics.velocityFromAngle(Phaser.Math.Between(0,360), 50, this.body.velocity); }
+    }
+    die() { updateGold(25); super.die(); }
+}
+
+class TownGuard extends Soldier {
+    constructor(scene, x, y, village) {
+        super(scene, x, y);
+        this.fillColor = 0x8888ff; // 深藍色
+        this.village = village;
+        this.hp = 100; this.maxHp = 100;
+        this.detectRange = 250;
+    }
+    update(player, isAutoMode) {
+        if(this.isDead) return; this.preUpdate();
+        
+        let distToVillage = Phaser.Math.Distance.Between(this.x, this.y, this.village.x, this.village.y);
+        if (distToVillage > 150) {
+            this.scene.physics.moveTo(this, this.village.x, this.village.y, this.speed * 1.5);
+            return;
+        }
+        
+        let target = this.findTarget(enemies, this.detectRange);
+        if (target) {
+            let dist = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
+            if (dist <= this.attackRange) { 
+                this.body.setVelocity(0); 
+                if (Date.now() - this.lastAttackTime > 800) { 
+                    projectiles.add(new MeleeSlash(this.scene, this.x, this.y, target, 20, false)); 
+                    this.lastAttackTime = Date.now(); 
+                } 
+            } 
+            else { this.scene.physics.moveToObject(this, target, this.speed); }
+        } else {
+            if (distToVillage > 50) this.scene.physics.moveTo(this, this.village.x, this.village.y, this.speed * 0.5);
+            else this.body.setVelocity(0);
+        }
+    }
+}
+
+class WanderingChampion extends Unit {
+    constructor(scene, x, y) {
+        super(scene, x, y, 32, 32, 0x9932cc, 500, 500); // 紫色
+        this.speed = 120;
+        this.detectRange = 250;
+        this.attackRange = 50;
+        this.isRecruited = false;
+        this.body.setCircle(16);
+        this.body.setMass(50);
+        this.hpBar.fillColor = 0xff00ff;
+    }
+    
+    update() {
+        if (this.isDead) return;
+        this.preUpdate();
+        
+        let target = null;
+        let minDist = this.detectRange;
+        
+        let groups = [squad, enemies, wildLife];
+        groups.forEach(g => {
+            g.children.iterate(u => {
+                if (u && !u.isDead && u.body) {
+                    let d = Phaser.Math.Distance.Between(this.x, this.y, u.x, u.y);
+                    if (d < minDist) { minDist = d; target = u; }
+                }
+            });
+        });
+        
+        let dp = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y);
+        if (dp < minDist) { minDist = dp; target = player; }
+        
+        if (target) {
+            if (minDist <= this.attackRange) {
+                this.body.setVelocity(0);
+                if (Date.now() - this.lastAttackTime > 600) {
+                    projectiles.add(new MeleeSlash(this.scene, this.x, this.y, target, 40, true));
+                    this.lastAttackTime = Date.now();
+                }
+            } else {
+                this.scene.physics.moveToObject(this, target, this.speed);
+            }
+        } else {
+            if (Math.random() < 0.02) this.scene.physics.velocityFromAngle(Phaser.Math.Between(0,360), 60, this.body.velocity);
+        }
+    }
+    
+    die() {
+        if (!this.isRecruited) {
+            this.isRecruited = true;
+            this.isDead = false; 
+            this.hp = this.maxHp;
+            this.fillColor = 0xffd700; // 金色
+            this.hpBar.fillColor = 0x00ff00;
+            this.width = 24; this.height = 24; 
+            this.body.setCircle(12);
+            
+            neutrals.remove(this);
+            squad.add(this);
+            
+            this.update = function(player, isAutoMode) {
+                if(this.isDead) return; this.preUpdate();
+                if (!isAutoMode) { 
+                    let d = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y); 
+                    if (d > 60) this.scene.physics.moveTo(this, player.x, player.y, this.speed); else this.body.setVelocity(0);
+                    return; 
+                }
+                
+                let t = null; let md = 300;
+                enemies.children.iterate(u => { if (u && !u.isDead) { let d = Phaser.Math.Distance.Between(this.x, this.y, u.x, u.y); if (d < md) { md = d; t = u; } } });
+                
+                if (t) {
+                    let d = Phaser.Math.Distance.Between(this.x, this.y, t.x, t.y);
+                    if (d <= 50) {
+                        this.body.setVelocity(0);
+                        if (Date.now() - this.lastAttackTime > 600) {
+                            projectiles.add(new MeleeSlash(this.scene, this.x, this.y, t, 50, false));
+                            this.lastAttackTime = Date.now();
+                        }
+                    } else this.scene.physics.moveToObject(this, t, this.speed * 1.3);
+                } else {
+                    let d = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y); 
+                    if (d > 60) this.scene.physics.moveTo(this, player.x, player.y, this.speed); else this.body.setVelocity(0);
+                }
+            };
+            
+            showToast(this.scene, "劍聖加入了你的隊伍！", "gold");
+        } else {
+            super.die();
+        }
+    }
+}
 
 class Village {
     constructor(scene, x, y, name) {
@@ -423,7 +566,21 @@ class Village {
         if (this.stock < this.maxStock) { this.stockTimer += delta; if (this.stockTimer > 6000) { this.stock++; this.refreshVisuals(); this.stockTimer = 0; } }
     }
     executeAction(action) { if (action === 'upgrade') this.upgrade(); else if (action === 'recruit_h') { if(this.recruit('H')) squad.add(new Soldier(this.scene, player.x, player.y)); } else if (action === 'recruit_j') { if(this.recruit('J')) squad.add(new Archer(this.scene, player.x, player.y)); } }
-    upgrade() { if (this.level >= 5) return false; let cost = this.level * 100; if (gold >= cost) { updateGold(-cost); this.level++; this.integrity = 100; this.maxStock = 2 + this.level; this.stock = this.maxStock; this.refreshVisuals(); showToast(this.scene, `${this.name} 升級至 Lv.${this.level}!`, "cyan"); return true; } return false; }
+    upgrade() { 
+        if (this.level >= 5) return false; 
+        let cost = this.level * 100; 
+        if (gold >= cost) { 
+            updateGold(-cost); this.level++; this.integrity = 100; this.maxStock = 2 + this.level; this.stock = this.maxStock; 
+            this.refreshVisuals(); showToast(this.scene, `${this.name} 升級至 Lv.${this.level}!`, "cyan"); 
+            if (this.level === 5) {
+                for(let i=0; i<2; i++) squad.add(new TownGuard(this.scene, this.x + Phaser.Math.Between(-30,30), this.y + Phaser.Math.Between(-30,30), this));
+                for(let i=0; i<2; i++) squad.add(new Archer(this.scene, this.x + Phaser.Math.Between(-30,30), this.y + Phaser.Math.Between(-30,30))); // 簡單加2個弓手
+                showToast(this.scene, "駐守衛隊已部署！", "gold");
+            }
+            return true; 
+        } 
+        return false; 
+    }
     downgrade() { this.level = 1; this.integrity = 100; updateRep(-200); showToast(this.scene, `${this.name} 被攻陷了！`, "red"); this.refreshVisuals(); }
     recruit(type) { if (this.stock <= 0) return false; let cost = (type === 'H') ? 20 : 30; if (gold >= cost) { updateGold(-cost); this.stock--; this.refreshVisuals(); showToast(this.scene, `招募成功 (-$${cost})`, "lime"); return true; } return false; }
     refreshVisuals() { this.statusText.setText(`Lv.${this.level} | ${this.stock}/${this.maxStock}`); let colors = [0x8b4513, 0xcd853f, 0xd2691e, 0xa0522d, 0x800000]; this.building.fillColor = colors[this.level-1] || 0x8b4513; }
@@ -479,6 +636,7 @@ function create() {
     wildLife = this.add.group({ runChildUpdate: false });
     projectiles = this.add.group({ runChildUpdate: false });
     loots = this.add.group({ runChildUpdate: false });
+    neutrals = this.add.group({ runChildUpdate: false });
 
     this.anims.create({ key: 'walk-down', frames: this.anims.generateFrameNumbers('player', { start: 0, end: 3 }), frameRate: 8, repeat: -1 });
     this.anims.create({ key: 'walk-left', frames: this.anims.generateFrameNumbers('player', { start: 4, end: 7 }), frameRate: 8, repeat: -1 });
@@ -497,17 +655,21 @@ function create() {
     player = new Hero(this, 1000, 1100);
     this.cameras.main.startFollow(player, true, 0.09, 0.09); this.cameras.main.setZoom(1.0);
     
+    neutrals.add(new WanderingChampion(this, 1500, 500));
+
     for(let i=0; i<12; i++) { let p=getRandomEdgePos(this, 100); wildLife.add(new Deer(this, p.x, p.y)); }
     for(let i=0; i<5; i++) { let p=getRandomEdgePos(this, 100); wildLife.add(new Wolf(this, p.x, p.y)); }
 
-    this.physics.add.collider(player, obstacles); this.physics.add.collider(player, enemies); this.physics.add.collider(player, wildLife);
+    this.physics.add.collider(player, obstacles); this.physics.add.collider(player, enemies); this.physics.add.collider(player, wildLife); this.physics.add.collider(player, neutrals);
     this.physics.add.collider(squad, obstacles); this.physics.add.collider(enemies, obstacles);
-    this.physics.add.collider(wildLife, obstacles);
+    this.physics.add.collider(wildLife, obstacles); this.physics.add.collider(neutrals, obstacles);
     this.physics.add.collider(squad, squad);
-    this.physics.add.collider(squad, enemies);
+    this.physics.add.collider(squad, enemies); this.physics.add.collider(squad, neutrals);
+    this.physics.add.collider(enemies, neutrals);
 
     this.physics.add.overlap(projectiles, enemies, (p, e) => { if(!p.isEnemy) { e.takeDamage(p.damage); p.destroy(); } });
     this.physics.add.overlap(projectiles, wildLife, (p, e) => { if(!p.isEnemy) { e.takeDamage(p.damage); p.destroy(); } });
+    this.physics.add.overlap(projectiles, neutrals, (p, e) => { if(!p.isEnemy) { e.takeDamage(p.damage); p.destroy(); } });
     this.physics.add.overlap(projectiles, squad, (p, s) => { if(p.isEnemy) { s.takeDamage(p.damage); p.destroy(); } });
     this.physics.add.overlap(projectiles, player, (p, h) => { if(p.isEnemy) { h.takeDamage(p.damage); p.destroy(); } });
     this.physics.add.overlap(player, loots, (p, l) => l.pickup());
@@ -549,6 +711,7 @@ function update(time, delta) {
     squad.children.iterate(u => u && u.update(player, isAutoAttackMode));
     enemies.children.iterate(u => u && u.update && u.update());
     wildLife.children.iterate(u => u && u.update && u.update());
+    neutrals.children.iterate(u => u && u.update && u.update());
     projectiles.children.iterate(p => p && p.update());
     uiTexts.squad.innerText = squad.countActive(true);
     uiTexts.enemy.innerText = enemies.countActive(true);
