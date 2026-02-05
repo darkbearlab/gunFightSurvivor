@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>羅賓漢戰記 - Phase 9 (Animation)</title>
+    <title>羅賓漢戰記 - Phase 10 (Physics)</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
         body { 
@@ -99,6 +99,7 @@ let squad, enemies, wildLife, obstacles, projectiles;
 let villages = [];
 let uiTexts = {}; 
 let cursors, wasd, keys;
+let joyGraphics;
 
 // --- UI 操作 ---
 function toggleMode() {
@@ -160,24 +161,37 @@ function endGame(victory, message) {
     desc.innerHTML = message;
 }
 
-// --- 單位類別 ---
+// --- 單位類別 (圓形物理優化) ---
 class Unit extends Phaser.GameObjects.Rectangle {
     constructor(scene, x, y, width, height, color, hp, maxHp) {
         super(scene, x, y, width, height, color);
         scene.add.existing(this);
         scene.physics.add.existing(this);
+        
+        // [Physics 1.0] 圓形碰撞
+        const radius = width / 2;
+        this.body.setCircle(radius); 
+        this.body.setCollideWorldBounds(true);
+        this.body.setBounce(0); // 不反彈，只推擠
+        this.body.setDrag(100); // 稍微加點阻力，停止時不滑太遠
+        this.body.setMass(1);   // 預設質量輕，容易被推開
+
         this.hp = hp;
         this.maxHp = maxHp || hp;
         this.isDead = false;
         this.lastAttackTime = 0;
+        
+        // 血條
         this.hpBarBg = scene.add.rectangle(x, y - height, width, 4, 0x000000).setDepth(1);
         this.hpBar = scene.add.rectangle(x, y - height, width, 4, 0x00ff00).setDepth(1);
     }
+
     preUpdate() {
         if (this.isDead) return;
         this.hpBarBg.setPosition(this.x, this.y - this.height/2 - 5);
         this.hpBar.setPosition(this.x, this.y - this.height/2 - 5);
     }
+
     takeDamage(amount) {
         if (this.isDead) return;
         this.scene.tweens.add({ targets: this, alpha: 0.2, duration: 50, yoyo: true, repeat: 1 });
@@ -189,9 +203,11 @@ class Unit extends Phaser.GameObjects.Rectangle {
         else if (pct < 0.6) this.hpBar.fillColor = 0xffff00;
         if (this.hp <= 0) this.die();
     }
+
     die() {
         this.isDead = true;
-        this.hpBar.destroy(); this.hpBarBg.destroy();
+        this.hpBar.destroy();
+        this.hpBarBg.destroy();
         const particles = this.scene.add.particles(this.x, this.y, 'pixel', { speed: 100, scale: { start: 1, end: 0 }, lifespan: 500, blendMode: 'ADD', tint: this.fillColor });
         this.scene.time.delayedCall(500, () => particles.destroy());
         this.destroy();
@@ -225,19 +241,15 @@ class MeleeSlash extends Projectile {
 // --- 英雄 ---
 class Hero extends Phaser.Physics.Arcade.Sprite {
     constructor(scene, x, y) {
-        // [修改] 這裡使用 'player' key，這個 key 在 preload 中被載入為 spritesheet
-        super(scene, x, y, 'player', 0); // 0 是預設 frame
-        
+        super(scene, x, y, 'player', 0);
         scene.add.existing(this);
         scene.physics.add.existing(this);
+        this.setScale(1.0);
         
-        this.setScale(1.0); // 假設圖有點小，可能不需要縮小了，先還原
-        
+        // [Physics 2.0] 主角物理
+        this.body.setCircle(12, 4, 8); // 半徑12, 偏移x, 偏移y (對齊腳部中心)
         this.body.setCollideWorldBounds(true);
-        this.body.pushable = false;
-        // [調整] 稍微調整碰撞框，避免頭部卡住
-        this.body.setSize(20, 20); 
-        this.body.setOffset(6, 12); // 調整 offset 讓碰撞框在腳部
+        this.body.setMass(100); // 質量大，可以推開士兵
         
         this.hp = 300; this.maxHp = 300; this.isDead = false;
         this.lastAttackTime = 0;
@@ -247,9 +259,8 @@ class Hero extends Phaser.Physics.Arcade.Sprite {
         this.hpBarBg = scene.add.rectangle(x, y - 30, 40, 4, 0x000000).setDepth(1);
         this.hpBar = scene.add.rectangle(x, y - 30, 40, 4, 0x00ff00).setDepth(1);
         
-        // 播放初始動畫 (例如向下)
         this.play('walk-down', true);
-        this.anims.stop(); // 初始靜止
+        this.anims.stop();
     }
     
     preUpdate(time, delta) {
@@ -265,7 +276,6 @@ class Hero extends Phaser.Physics.Arcade.Sprite {
 
         if (cursors.left.isDown || wasd.left.isDown) vx = -1;
         else if (cursors.right.isDown || wasd.right.isDown) vx = 1;
-        
         if (cursors.up.isDown || wasd.up.isDown) vy = -1;
         else if (cursors.down.isDown || wasd.down.isDown) vy = 1;
 
@@ -278,17 +288,12 @@ class Hero extends Phaser.Physics.Arcade.Sprite {
             let v = new Phaser.Math.Vector2(vx, vy).normalize().scale(this.speed);
             this.body.setVelocity(v.x, v.y);
             
-            // [新增] 動畫邏輯
-            // 優先判斷 Y 軸 (上下)，再判斷 X 軸 (左右)
             if (Math.abs(vy) >= Math.abs(vx)) {
-                if (vy > 0) this.play('walk-down', true);
-                else this.play('walk-up', true);
+                if (vy > 0) this.play('walk-down', true); else this.play('walk-up', true);
             } else {
-                if (vx > 0) this.play('walk-right', true);
-                else this.play('walk-left', true);
+                if (vx > 0) this.play('walk-right', true); else this.play('walk-left', true);
             }
         } else {
-            // 停止移動時，停止動畫並停在第一幀
             this.anims.stop();
         }
     }
@@ -339,7 +344,11 @@ class Hero extends Phaser.Physics.Arcade.Sprite {
 
 // --- 士兵與弓手 ---
 class Soldier extends Unit {
-    constructor(scene, x, y) { super(scene, x, y, 20, 20, 0x33ccff, 60, 60); this.speed = 180; this.detectRange = 300; this.guardRange = 120; this.attackRange = 40; this.wanderOffset = new Phaser.Math.Vector2(Phaser.Math.Between(-50,50), Phaser.Math.Between(-50,50)); }
+    constructor(scene, x, y) { 
+        super(scene, x, y, 20, 20, 0x33ccff, 60, 60); 
+        this.speed = 180; this.detectRange = 300; this.guardRange = 120; this.attackRange = 40; 
+        this.wanderOffset = new Phaser.Math.Vector2(Phaser.Math.Between(-50,50), Phaser.Math.Between(-50,50)); 
+    }
     update(player, isAutoMode) {
         if(this.isDead) return; this.preUpdate();
         if (!isAutoMode) { this.follow(player, false); return; }
@@ -396,7 +405,19 @@ class EnemyArcher extends EnemyUnit {
     }
 }
 class Carriage extends EnemyUnit {
-    constructor(scene, startX, startY, endX, endY) { super(scene, startX, startY, 0xffd700, 300, 30, null); this.width = 40; this.height = 60; this.targetPos = new Phaser.Math.Vector2(endX, endY); this.body.setCollideWorldBounds(true); this.body.setImmovable(true); this.scene.physics.moveTo(this, endX, endY, this.speed); this.hpBarBg.destroy(); this.hpBar.destroy(); this.hpBarBg = scene.add.rectangle(this.x, this.y, 40, 4, 0x000000).setDepth(1); this.hpBar = scene.add.rectangle(this.x, this.y, 40, 4, 0x00ff00).setDepth(1); }
+    constructor(scene, startX, startY, endX, endY) { 
+        super(scene, startX, startY, 0xffd700, 300, 30, null); 
+        this.width = 40; this.height = 60; 
+        this.targetPos = new Phaser.Math.Vector2(endX, endY); 
+        this.body.setCollideWorldBounds(true); 
+        // [Physics 2.0] 馬車物理 - 重型單位
+        this.body.setCircle(25, -5, 5); // 稍微調整圓心適應長方形視覺
+        this.body.setMass(1000); // 極重，推不動
+        this.scene.physics.moveTo(this, endX, endY, this.speed); 
+        this.hpBarBg.destroy(); this.hpBar.destroy(); 
+        this.hpBarBg = scene.add.rectangle(this.x, this.y, 40, 4, 0x000000).setDepth(1); 
+        this.hpBar = scene.add.rectangle(this.x, this.y, 40, 4, 0x00ff00).setDepth(1); 
+    }
     die() { updateGold(600); updateRep(150); showToast(this.scene, "搶得 $600 + 150 Rep!", "gold"); super.die(); }
 }
 class Deer extends Unit {
@@ -410,7 +431,7 @@ class Wolf extends Unit {
     die() { updateGold(25); super.die(); }
 }
 
-// --- 村莊系統 ---
+// --- 村莊 ---
 class Village {
     constructor(scene, x, y, name) {
         this.scene = scene; this.x = x; this.y = y; this.name = name;
@@ -423,7 +444,10 @@ class Village {
         this.siegeRadius = 90; this.integrity = 100; this.maxIntegrity = 100;
         this.siegeZone = scene.add.circle(x, y, this.siegeRadius, 0xff0000, 0.1); scene.physics.add.existing(this.siegeZone, true);
         this.siegeBar = scene.add.rectangle(x, y + 20, 60, 6, 0x00ff00).setOrigin(0.5);
-        this.building = scene.add.rectangle(x, y, 60, 60, 0x8b4513); scene.physics.add.existing(this.building, true); obstacles.add(this.building);
+        this.building = scene.add.rectangle(x, y, 60, 60, 0x8b4513); 
+        scene.physics.add.existing(this.building, true); 
+        obstacles.add(this.building);
+        
         this.zoneGraphics = scene.add.graphics(); this.drawZones();
         this.nameText = scene.add.text(x, y - 40, name, {fontSize: '16px', fontWeight:'bold'}).setOrigin(0.5);
         this.levelText = scene.add.text(x, y - 25, "Lv.1", {fontSize: '14px', color:'#aaa'}).setOrigin(0.5);
@@ -485,6 +509,7 @@ class Village {
     refreshVisuals() { this.levelText.setText(`Lv.${this.level}`); let colors = [0x8b4513, 0xcd853f, 0xd2691e, 0xa0522d, 0x800000]; this.building.fillColor = colors[this.level-1] || 0x8b4513; }
 }
 
+// ... (Game Director, Setup 等保持不變，篇幅所限省略重複部分，但需確保上面的物理邏輯已套用) ...
 class GameDirector {
     constructor(scene) { this.scene = scene; this.timers = { patrol: 0, caravan: 0 }; }
     update(delta) {
@@ -518,27 +543,17 @@ class GameDirector {
     }
 }
 
-// --- Main Setup ---
 const config = {
     type: Phaser.AUTO, width: window.innerWidth, height: window.innerHeight, parent: 'game-container',
-    physics: { default: 'arcade', arcade: { gravity: { y: 0 }, debug: false } },
+    physics: { default: 'arcade', arcade: { gravity: { y: 0 }, debug: false } }, // 設為 true 可看碰撞圈
     scene: { preload: preload, create: create, update: update },
     backgroundColor: '#3b7d4f'
 };
 
 game = new Phaser.Game(config);
 
-let joyGraphics;
-
 function preload() {
-    // 載入 spritesheet，設定 frameWidth/Height
-    // 假設原始圖是包含 4 行 4 列的排列 (一般 RPG Maker 格式)
-    // 如果圖比較特殊，這裡的 32, 32 可能需要調整
-    this.load.spritesheet('player', 'https://raw.githubusercontent.com/darkbearlab/gunFightSurvivor/refs/heads/main/player.png', {
-        frameWidth: 32, 
-        frameHeight: 32
-    });
-    
+    this.load.spritesheet('player', 'https://raw.githubusercontent.com/darkbearlab/gunFightSurvivor/refs/heads/main/player.png', { frameWidth: 32, frameHeight: 32 });
     const graphics = this.make.graphics({x: 0, y: 0, add: false});
     graphics.fillStyle(0xffffff, 1); graphics.fillRect(0, 0, 4, 4); graphics.generateTexture('pixel', 4, 4);
 }
@@ -557,38 +572,21 @@ function create() {
     wildLife = this.add.group({ runChildUpdate: false });
     projectiles = this.add.group({ runChildUpdate: false });
 
-    // 建立動畫
-    // 假設順序是：下(0-3), 左(4-7), 右(8-11), 上(12-15)
-    // 這是非常標準的 RPG Maker 格式，如果你的圖不同，順序可能要改
-    this.anims.create({
-        key: 'walk-down',
-        frames: this.anims.generateFrameNumbers('player', { start: 0, end: 3 }),
-        frameRate: 8,
-        repeat: -1
-    });
-    this.anims.create({
-        key: 'walk-left',
-        frames: this.anims.generateFrameNumbers('player', { start: 4, end: 7 }),
-        frameRate: 8,
-        repeat: -1
-    });
-    this.anims.create({
-        key: 'walk-right',
-        frames: this.anims.generateFrameNumbers('player', { start: 8, end: 11 }),
-        frameRate: 8,
-        repeat: -1
-    });
-    this.anims.create({
-        key: 'walk-up',
-        frames: this.anims.generateFrameNumbers('player', { start: 12, end: 15 }),
-        frameRate: 8,
-        repeat: -1
-    });
+    this.anims.create({ key: 'walk-down', frames: this.anims.generateFrameNumbers('player', { start: 0, end: 3 }), frameRate: 8, repeat: -1 });
+    this.anims.create({ key: 'walk-left', frames: this.anims.generateFrameNumbers('player', { start: 4, end: 7 }), frameRate: 8, repeat: -1 });
+    this.anims.create({ key: 'walk-right', frames: this.anims.generateFrameNumbers('player', { start: 8, end: 11 }), frameRate: 8, repeat: -1 });
+    this.anims.create({ key: 'walk-up', frames: this.anims.generateFrameNumbers('player', { start: 12, end: 15 }), frameRate: 8, repeat: -1 });
 
     for (let i = 0; i < 80; i++) {
         let tx = Phaser.Math.Between(50, 1950); let ty = Phaser.Math.Between(50, 1950); let clear = true;
         [[400,400], [1000,1000], [1600,1600]].forEach(p => { if(Math.abs(tx-p[0])<150 && Math.abs(ty-p[1])<150) clear = false; });
-        if (clear) { let tree = this.add.rectangle(tx, ty, 40, 40, 0x1e4726); this.physics.add.existing(tree, true); obstacles.add(tree); }
+        // [Physics 3.0] 樹木圓形物理 (不可推動)
+        if (clear) { 
+            let tree = this.add.rectangle(tx, ty, 40, 40, 0x1e4726); 
+            this.physics.add.existing(tree, true); // static
+            tree.body.setCircle(20); 
+            obstacles.add(tree); 
+        }
     }
 
     villages = [ new Village(this, 400, 400, "北境村"), new Village(this, 1000, 1000, "中央市集"), new Village(this, 1600, 1600, "南風鎮") ];
@@ -630,7 +628,6 @@ function create() {
         }
     }, loop: true });
     
-    // 搖桿UI
     joyGraphics = this.add.graphics().setScrollFactor(0).setDepth(999);
     
     this.input.on('pointerdown', (pointer) => {
