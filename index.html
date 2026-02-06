@@ -3,29 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>羅賓漢戰記 - Phase 12</title>
+    <title>羅賓漢戰記 - Phase 14</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
         body { 
             margin: 0; padding: 0; background-color: #2d2d2d; overflow: hidden; 
             font-family: 'Segoe UI', sans-serif; 
             user-select: none; -webkit-user-select: none; 
-            touch-action: none;
+            touch-action: none; color: white;
         }
         #game-container { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
         
+        /* HUD */
         #ui-layer {
-            position: absolute; top: 10px; left: 10px; right: 10px; color: white; pointer-events: none;
-            text-shadow: 1px 1px 2px black;
-            display: flex; flex-direction: column; gap: 5px;
-            z-index: 10;
+            position: absolute; top: 10px; left: 10px; right: 10px; pointer-events: none;
+            text-shadow: 1px 1px 2px black; display: flex; flex-direction: column; gap: 5px; z-index: 10;
         }
-        
-        .hud-box {
-            background-color: rgba(0, 0, 0, 0.6); padding: 10px; border-radius: 8px;
-            pointer-events: auto;
-        }
+        .hud-box { background-color: rgba(0, 0, 0, 0.6); padding: 10px; border-radius: 8px; pointer-events: auto; }
+        .stat-row { display: flex; justify-content: space-between; margin-bottom: 2px; font-size: 14px; }
+        .bar-container { width: 100%; background: #444; height: 8px; border-radius: 4px; margin-top: 2px; overflow: hidden; }
+        .bar-fill { height: 100%; background: lime; width: 0%; transition: width 0.5s; }
+        .buff-icon { display: none; margin-right: 5px; color: gold; font-weight: bold; }
 
+        /* Mobile Controls */
+        #mobile-controls { position: absolute; bottom: 20px; right: 20px; z-index: 15; pointer-events: auto; }
+        #mode-btn {
+            width: 80px; height: 80px; border-radius: 50%; border: 4px solid white;
+            background-color: rgba(0, 255, 0, 0.5); color: white; font-weight: bold; font-size: 14px;
+            display: flex; justify-content: center; align-items: center; text-align: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5); cursor: pointer; transition: transform 0.1s;
+        }
+        #mode-btn:active { transform: scale(0.95); }
+
+        /* Start Screen */
+        #start-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 50;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        h1 { margin-bottom: 30px; color: gold; text-shadow: 0 0 10px orange; font-size: 40px; }
+        .skill-container { display: flex; gap: 20px; margin-bottom: 40px; }
+        .skill-card {
+            width: 110px; height: 140px; border: 2px solid #555; border-radius: 10px;
+            background: #222; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            cursor: pointer; transition: all 0.2s; position: relative; padding: 10px; text-align: center;
+        }
+        .skill-card.selected { border-color: lime; background: #004400; box-shadow: 0 0 15px lime; }
+        .skill-icon { font-size: 40px; margin-bottom: 10px; }
+        .skill-name { font-size: 16px; font-weight: bold; margin-bottom: 5px; color: white;}
+        .skill-desc { font-size: 12px; color: #aaa; }
+        #start-btn {
+            padding: 15px 50px; font-size: 24px; background: gold; color: black; border: none;
+            border-radius: 8px; cursor: pointer; font-weight: bold; box-shadow: 0 5px 15px rgba(255,215,0,0.4);
+        }
+        #start-btn:active { transform: translateY(2px); }
+        
+        #gear-btn {
+            position: absolute; top: 20px; right: 20px; font-size: 30px; cursor: pointer; color: #888; transition: color 0.3s;
+        }
+        #gear-btn:hover { color: white; transform: rotate(90deg); }
+
+        /* Settings Modal */
+        #settings-modal {
+            display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 80%; max-width: 500px; max-height: 80vh; background: #222; border: 2px solid #555;
+            border-radius: 10px; padding: 20px; z-index: 60; overflow-y: auto; box-shadow: 0 0 30px black;
+        }
+        .settings-group { margin-bottom: 15px; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        .settings-group h3 { color: cyan; margin: 0 0 10px 0; font-size: 16px; }
+        .input-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .input-row label { font-size: 14px; color: #ccc; }
+        .input-row input { width: 80px; padding: 5px; background: #111; border: 1px solid #444; color: white; text-align: right; border-radius: 4px; }
+        .modal-btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+        .modal-btn { padding: 8px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .save-btn { background: lime; color: black; }
+        .cancel-btn { background: #555; color: white; }
+
+        /* Game Over Screen */
         #game-over-screen {
             display: none; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
             background: rgba(0,0,0,0.85); color: white; z-index: 20;
@@ -33,49 +87,68 @@
         }
         #game-over-title { font-size: 3em; margin-bottom: 20px; font-weight: bold; }
         button.restart-btn { margin-top: 30px; padding: 15px 40px; font-size: 1.5em; cursor: pointer; background: gold; border: none; border-radius: 8px; font-weight: bold; }
-        
-        #mobile-controls {
-            position: absolute; bottom: 20px; right: 20px; z-index: 15; pointer-events: auto;
-        }
-        #mode-btn {
-            width: 80px; height: 80px; border-radius: 50%; border: 4px solid white;
-            background-color: rgba(0, 255, 0, 0.5); color: white; font-weight: bold; font-size: 14px;
-            display: flex; justify-content: center; align-items: center; text-align: center;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5); cursor: pointer; user-select: none;
-            transition: transform 0.1s;
-        }
-        #mode-btn:active { transform: scale(0.95); }
-
-        .stat-row { display: flex; justify-content: space-between; margin-bottom: 2px; font-size: 14px; }
-        .bar-container { width: 100%; background: #444; height: 8px; border-radius: 4px; margin-top: 2px; overflow: hidden; }
-        .bar-fill { height: 100%; background: lime; width: 0%; transition: width 0.5s; }
-        .buff-icon { display: none; margin-right: 5px; color: gold; font-weight: bold; }
     </style>
 </head>
 <body>
 
-<div id="ui-layer">
+<!-- UI Layer -->
+<div id="ui-layer" style="display:none;">
     <div class="hud-box">
         <div class="stat-row">
             <span>⏳ <span id="time-display" style="color: cyan;">05:00</span></span>
             <span>💰 <span id="gold-display" style="color: gold;">0</span></span>
         </div>
         <div>
-            名聲: <span id="rep-display">0</span> / 3000
+            名聲: <span id="rep-display">0</span> / <span id="target-rep-display">3000</span>
             <div class="bar-container"><div id="rep-bar" class="bar-fill"></div></div>
         </div>
         <div style="margin-top:5px; font-size:12px; color:#aaa; display: flex; align-items: center;">
             <span style="margin-right: 10px;">部隊: <span id="squad-count">0</span> | 敵軍: <span id="enemy-count">0</span></span>
-            <span id="buff-gold" class="buff-icon">🏆金杯</span>
-            <span id="buff-rep" class="buff-icon">📜印章</span>
+            <span id="buff-gold" class="buff-icon">🏆</span>
+            <span id="buff-rep" class="buff-icon">📜</span>
         </div>
     </div>
 </div>
 
-<div id="mobile-controls">
+<div id="mobile-controls" style="display:none;">
     <div id="mode-btn" onclick="toggleMode()">🛡️<br>跟隨</div>
 </div>
 
+<!-- Start Screen (Class Selection) -->
+<div id="start-screen">
+    <div id="gear-btn" onclick="openSettings()">⚙️</div>
+    <h1>羅賓漢戰記</h1>
+    <div class="skill-container">
+        <div class="skill-card selected" onclick="selectClass(this, 'warrior')">
+            <div class="skill-icon">⚔️</div>
+            <div class="skill-name">戰士</div>
+            <div class="skill-desc">高血量<br>近戰速攻</div>
+        </div>
+        <div class="skill-card" onclick="selectClass(this, 'archer')">
+            <div class="skill-icon">🏹</div>
+            <div class="skill-name">射手</div>
+            <div class="skill-desc">低血量<br>長程狙擊</div>
+        </div>
+        <div class="skill-card" onclick="selectClass(this, 'mage')">
+            <div class="skill-icon">🔮</div>
+            <div class="skill-name">法師</div>
+            <div class="skill-desc">極脆皮<br>範圍回血</div>
+        </div>
+    </div>
+    <button id="start-btn" onclick="startGame()">開始起義</button>
+</div>
+
+<!-- Settings Modal -->
+<div id="settings-modal">
+    <h2 style="margin-top:0; border-bottom:1px solid #555; padding-bottom:10px;">遊戲平衡設定</h2>
+    <div id="settings-content"></div>
+    <div class="modal-btns">
+        <button class="modal-btn cancel-btn" onclick="closeSettings()">取消</button>
+        <button class="modal-btn save-btn" onclick="saveSettings()">保存並關閉</button>
+    </div>
+</div>
+
+<!-- Game Over -->
 <div id="game-over-screen">
     <div id="game-over-title">GAME OVER</div>
     <div id="game-over-desc" style="padding: 0 20px;"></div>
@@ -85,128 +158,124 @@
 <div id="game-container"></div>
 
 <script>
-// --- 全域設定 ---
-const GAME_DURATION = 300; 
-const TARGET_REP = 3000;
+// --- Config ---
+const G = {
+    gameDuration: 300, targetRep: 3000, initialGold: 300,
+    heroSpeed: 220, // 這是基礎速度，職業會修正它
+    costSoldier: 20, costArcher: 30, upgradeCostFactor: 100, dropRate: 0.2,
+    patrolBaseInterval: 40000,
+    selectedClass: 'warrior' // warrior, archer, mage
+};
 
 let game, player, director;
-let gold = 300; 
-let reputation = 0;
-let isAutoAttackMode = false;
-let gameTimeLeft = GAME_DURATION;
-let isGameOver = false;
+let gold = 0; let reputation = 0; let isAutoAttackMode = false;
+let gameTimeLeft = 0; let isGameOver = false; let isGameStarted = false;
 let permanentBuffs = { gold: false, rep: false };
-
 let joyStick = { active: false, startX: 0, startY: 0, currX: 0, currY: 0, vec: new Phaser.Math.Vector2(0,0) };
-
 let squad, enemies, wildLife, obstacles, projectiles, loots, neutrals;
-let villages = [];
-let manors = [];
-let uiTexts = {}; 
-let cursors, wasd, keys;
-let joyGraphics;
+let villages = []; let manors = []; let uiTexts = {}; 
+let cursors, wasd, keys, joyGraphics;
+
+// --- UI Logic ---
+function selectClass(el, cls) {
+    document.querySelectorAll('.skill-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    G.selectedClass = cls;
+}
+
+function startGame() {
+    document.getElementById('start-screen').style.display = 'none';
+    document.getElementById('ui-layer').style.display = 'flex';
+    document.getElementById('mobile-controls').style.display = 'block';
+    
+    gold = G.initialGold;
+    gameTimeLeft = G.gameDuration;
+    document.getElementById('target-rep-display').innerText = G.targetRep;
+    
+    updateGold(0);
+    isGameStarted = true;
+    
+    // 初始化玩家時會讀取 G.selectedClass
+    if (player) player.initClassStats();
+}
+
+function openSettings() {
+    const content = document.getElementById('settings-content');
+    content.innerHTML = '';
+    const settingsMap = [
+        { title: "宏觀規則", items: [{ key: 'gameDuration', label: '時間(秒)' }, { key: 'targetRep', label: '目標名聲' }, { key: 'initialGold', label: '初始金' }] },
+        { title: "經濟平衡", items: [{ key: 'costSoldier', label: '步兵價' }, { key: 'costArcher', label: '弓兵價' }, { key: 'dropRate', label: '掉寶率' }] },
+        { title: "難度", items: [{ key: 'patrolBaseInterval', label: '巡邏間隔' }] }
+    ];
+    settingsMap.forEach(group => {
+        let html = `<div class="settings-group"><h3>${group.title}</h3>`;
+        group.items.forEach(item => { html += `<div class="input-row"><label>${item.label}</label><input type="number" id="cfg-${item.key}" value="${G[item.key]}" step="${item.key==='dropRate'?0.1:10}"></div>`; });
+        html += `</div>`; content.innerHTML += html;
+    });
+    document.getElementById('settings-modal').style.display = 'block';
+}
+function closeSettings() { document.getElementById('settings-modal').style.display = 'none'; }
+function saveSettings() {
+    for (let key in G) { let input = document.getElementById(`cfg-${key}`); if (input) G[key] = parseFloat(input.value); }
+    closeSettings();
+}
 
 function toggleMode() {
     isAutoAttackMode = !isAutoAttackMode;
     const btn = document.getElementById('mode-btn');
-    if (isAutoAttackMode) {
-        btn.innerHTML = "⚔️<br>攻擊";
-        btn.style.backgroundColor = "rgba(255, 0, 0, 0.6)";
-    } else {
-        btn.innerHTML = "🛡️<br>跟隨";
-        btn.style.backgroundColor = "rgba(0, 255, 0, 0.5)";
-    }
+    if (isAutoAttackMode) { btn.innerHTML = "⚔️<br>攻擊"; btn.style.backgroundColor = "rgba(255, 0, 0, 0.6)"; } 
+    else { btn.innerHTML = "🛡️<br>跟隨"; btn.style.backgroundColor = "rgba(0, 255, 0, 0.5)"; }
 }
 
-function updateGold(amount) {
-    gold += amount;
-    uiTexts.gold.innerText = Math.floor(gold);
-}
+function updateGold(amount) { gold += amount; if(uiTexts.gold) uiTexts.gold.innerText = Math.floor(gold); }
+function updateRep(amount) { reputation += amount; if(reputation<0)reputation=0; if(uiTexts.rep) { uiTexts.rep.innerText = Math.floor(reputation); let pct = Math.min((reputation/G.targetRep)*100,100); uiTexts.repBar.style.width = pct+"%"; } }
+function showDamageText(scene, x, y, amount, color='#fff') { let text = scene.add.text(x, y-20, amount, { fontSize: '16px', color: color, stroke: '#000', strokeThickness: 3, fontWeight: 'bold' }).setOrigin(0.5).setDepth(20); scene.tweens.add({ targets: text, y: y-50, alpha: 0, duration: 800, onComplete: () => text.destroy() }); }
+function showToast(scene, msg, color) { let text = scene.add.text(player.x, player.y-150, msg, { fontSize: '20px', color: color, stroke: '#000', strokeThickness: 4, backgroundColor: 'rgba(0,0,0,0.6)', padding: {x:10, y:5} }).setOrigin(0.5).setDepth(100); scene.tweens.add({ targets: text, y: player.y-200, alpha: 0, duration: 3000, onComplete: () => text.destroy() }); }
+function checkGameOver() { if(isGameOver)return; if(gameTimeLeft<=0) { if(reputation>=G.targetRep) endGame(true, "傳奇誕生！<br>你成功抵抗了暴政。"); else endGame(false, "起義失敗。<br>歷史遺忘了你的名字。"); } }
+function endGame(victory, message) { isGameOver=true; game.scene.pause("default"); document.getElementById('game-over-screen').style.display='flex'; document.getElementById('game-over-title').innerText = victory?"VICTORY!":"DEFEAT"; document.getElementById('game-over-title').style.color=victory?"gold":"red"; document.getElementById('game-over-desc').innerHTML = message; }
 
-function updateRep(amount) {
-    reputation += amount;
-    if (reputation < 0) reputation = 0;
-    uiTexts.rep.innerText = Math.floor(reputation);
-    let pct = Math.min((reputation / TARGET_REP) * 100, 100);
-    uiTexts.repBar.style.width = pct + "%";
-}
+// --- Classes ---
 
-function showDamageText(scene, x, y, amount, color = '#fff') {
-    let text = scene.add.text(x, y - 20, amount, {
-        fontSize: '16px', color: color, stroke: '#000', strokeThickness: 3, fontWeight: 'bold'
-    }).setOrigin(0.5).setDepth(20);
-    scene.tweens.add({ targets: text, y: y - 50, alpha: 0, duration: 800, onComplete: () => text.destroy() });
-}
-
-function showToast(scene, msg, color) {
-    let text = scene.add.text(player.x, player.y - 150, msg, {
-        fontSize: '20px', color: color, stroke: '#000', strokeThickness: 4, backgroundColor: 'rgba(0,0,0,0.6)', padding: {x:10, y:5}
-    }).setOrigin(0.5).setDepth(100);
-    scene.tweens.add({ targets: text, y: player.y - 200, alpha: 0, duration: 3000, onComplete: () => text.destroy() });
-}
-
-function checkGameOver() {
-    if (isGameOver) return;
-    if (gameTimeLeft <= 0) {
-        if (reputation >= TARGET_REP) endGame(true, "傳奇誕生！<br>你成功抵抗了暴政，並建立了新的秩序。");
-        else endGame(false, "起義失敗。<br>隨著獅心王歸國，你的名字被遺忘在歷史中。");
-    }
-}
-
-function endGame(victory, message) {
-    isGameOver = true;
-    game.scene.pause("default");
-    const screen = document.getElementById('game-over-screen');
-    const title = document.getElementById('game-over-title');
-    const desc = document.getElementById('game-over-desc');
-    screen.style.display = 'flex';
-    title.innerText = victory ? "VICTORY!" : "DEFEAT";
-    title.style.color = victory ? "gold" : "red";
-    desc.innerHTML = message;
-}
-
-// --- 道具 ---
 class Loot extends Phaser.GameObjects.Text {
     constructor(scene, x, y, type) {
-        let icon = '💰';
-        if (type === 'heal') icon = '❤️';
-        else if (type === 'buff') icon = '⚔️';
-        super(scene, x, y, icon, { fontSize: '20px' });
-        scene.add.existing(this); scene.physics.add.existing(this);
-        this.type = type; this.bornTime = Date.now();
-        scene.tweens.add({ targets: this, y: y - 5, duration: 500, yoyo: true, repeat: -1 });
+        let icon = '💰'; if (type === 'heal') icon = '❤️'; else if (type === 'buff') icon = '⚔️';
+        super(scene, x, y, icon, { fontSize: '20px' }); scene.add.existing(this); scene.physics.add.existing(this); this.type = type; this.bornTime = Date.now(); scene.tweens.add({ targets: this, y: y-5, duration: 500, yoyo: true, repeat: -1 });
     }
     pickup() {
-        if (this.type === 'heal') { player.hp = Math.min(player.hp + 50, player.maxHp); showDamageText(this.scene, player.x, player.y, "+50 HP", "#0f0"); } 
+        if (this.type === 'heal') { player.heal(50); } 
         else if (this.type === 'gold') { updateGold(50); updateRep(10); showDamageText(this.scene, player.x, player.y, "+$50", "gold"); } 
         else if (this.type === 'buff') { player.activateBuff(); showToast(this.scene, "攻擊力提升!", "red"); }
         this.destroy();
     }
 }
 
-// --- 單位基礎 ---
 class Unit extends Phaser.GameObjects.Rectangle {
     constructor(scene, x, y, width, height, color, hp, maxHp) {
-        super(scene, x, y, width, height, color);
-        scene.add.existing(this); scene.physics.add.existing(this);
+        super(scene, x, y, width, height, color); scene.add.existing(this); scene.physics.add.existing(this);
         const radius = width / 2; this.body.setCircle(radius); this.body.setCollideWorldBounds(true); this.body.setBounce(0); this.body.setDrag(100); this.body.setMass(1);
         this.hp = hp; this.maxHp = maxHp || hp; this.isDead = false; this.lastAttackTime = 0;
         this.hpBarBg = scene.add.rectangle(x, y - height, width, 4, 0x000000).setDepth(1);
         this.hpBar = scene.add.rectangle(x, y - height, width, 4, 0x00ff00).setDepth(1);
     }
     preUpdate() { if (this.isDead) return; this.hpBarBg.setPosition(this.x, this.y - this.height/2 - 5); this.hpBar.setPosition(this.x, this.y - this.height/2 - 5); }
-    takeDamage(amount) { 
-        if (this.isDead) return; 
-        this.hp -= amount; 
-        showDamageText(this.scene, this.x, this.y, amount); 
-        const pct = Math.max(0, this.hp / this.maxHp); 
-        this.hpBar.width = this.width * pct; 
-        if (pct < 0.3) this.hpBar.fillColor = 0xff0000; else if (pct < 0.6) this.hpBar.fillColor = 0xffff00; 
-        if (this.hp <= 0) this.die(); 
+    takeDamage(amount) { if (this.isDead) return; this.hp -= amount; showDamageText(this.scene, this.x, this.y, amount); this.updateHpBar(); if (this.hp <= 0) this.die(); }
+    
+    // [新增] 治療方法
+    heal(amount) {
+        if (this.isDead || this.hp >= this.maxHp) return;
+        this.hp = Math.min(this.hp + amount, this.maxHp);
+        showDamageText(this.scene, this.x, this.y, `+${amount}`, "#00ff00");
+        this.updateHpBar();
     }
+    
+    updateHpBar() {
+        const pct = Math.max(0, this.hp / this.maxHp); this.hpBar.width = this.width * pct;
+        if (pct < 0.3) this.hpBar.fillColor = 0xff0000; else if (pct < 0.6) this.hpBar.fillColor = 0xffff00; else this.hpBar.fillColor = 0x00ff00;
+    }
+
     die() {
         this.isDead = true; this.hpBar.destroy(); this.hpBarBg.destroy();
-        if (Math.random() < 0.2) { let r = Math.random(); let type = 'gold'; if (r < 0.4) type = 'heal'; else if (r < 0.5) type = 'buff'; loots.add(new Loot(this.scene, this.x, this.y, type)); }
+        if (Math.random() < G.dropRate) { let r = Math.random(); let type = 'gold'; if (r < 0.4) type = 'heal'; else if (r < 0.5) type = 'buff'; loots.add(new Loot(this.scene, this.x, this.y, type)); }
         const particles = this.scene.add.particles(this.x, this.y, 'pixel', { speed: 100, scale: { start: 1, end: 0 }, lifespan: 500, blendMode: 'ADD', tint: this.fillColor });
         this.scene.time.delayedCall(500, () => particles.destroy());
         this.destroy();
@@ -215,40 +284,88 @@ class Unit extends Phaser.GameObjects.Rectangle {
 
 class Projectile extends Phaser.GameObjects.Rectangle {
     constructor(scene, x, y, target, damage, isEnemy, speed, lifeTime, color) {
-        super(scene, x, y, 10, 4, color || (isEnemy ? 0xff4444 : 0xffff00));
-        scene.add.existing(this); scene.physics.add.existing(this);
+        super(scene, x, y, 10, 4, color || (isEnemy ? 0xff4444 : 0xffff00)); scene.add.existing(this); scene.physics.add.existing(this);
         this.damage = damage; this.isEnemy = isEnemy; this.bornTime = Date.now(); this.lifeTime = lifeTime || 1000;
         const angle = Phaser.Math.Angle.Between(x, y, target.x, target.y); this.rotation = angle;
         scene.physics.velocityFromRotation(angle, speed || 400, this.body.velocity);
     }
     update() { if (Date.now() - this.bornTime > this.lifeTime) this.destroy(); }
 }
-
 class MeleeSlash extends Projectile {
-    constructor(scene, x, y, target, damage, isEnemy) {
-        super(scene, x, y, target, damage, isEnemy, 600, 150, 0xffffff);
-        this.width = 16; this.height = 16; 
-        scene.tweens.add({ targets: this, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 150 });
-    }
+    constructor(scene, x, y, target, damage, isEnemy) { super(scene, x, y, target, damage, isEnemy, 600, 150, 0xffffff); this.width = 16; this.height = 16; scene.tweens.add({ targets: this, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 150 }); }
 }
 
-// --- 英雄 ---
+// --- 英雄 (職業系統核心) ---
 class Hero extends Phaser.Physics.Arcade.Sprite {
     constructor(scene, x, y) {
         super(scene, x, y, 'player', 0);
         scene.add.existing(this); scene.physics.add.existing(this); this.setScale(1.0);
         this.body.setCircle(12, 4, 8); this.body.setCollideWorldBounds(true); this.body.setMass(100); 
         this.hp = 300; this.maxHp = 300; this.isDead = false; this.lastAttackTime = 0;
-        this.speed = 220; this.detectRange = 100; this.attackCooldown = 500; this.damageMultiplier = 1; this.buffTimer = 0;
+        this.speed = G.heroSpeed; this.detectRange = 100; this.attackCooldown = 500;
+        this.damageMultiplier = 1; this.buffTimer = 0;
+        this.classType = 'warrior'; 
+        this.healTimer = 0; // 法師用
+
         this.hpBarBg = scene.add.rectangle(x, y - 30, 40, 4, 0x000000).setDepth(1);
         this.hpBar = scene.add.rectangle(x, y - 30, 40, 4, 0x00ff00).setDepth(1);
         this.play('walk-down', true); this.anims.stop();
     }
+    
+    // [新增] 初始化職業數值
+    initClassStats() {
+        this.classType = G.selectedClass;
+        if (this.classType === 'warrior') {
+            this.maxHp = 450;
+            this.hp = 450;
+            this.attackCooldown = 300; // 攻速快
+            this.detectRange = 80;     // 距離短
+            this.speed = G.heroSpeed;
+        } else if (this.classType === 'archer') {
+            this.maxHp = 200;
+            this.hp = 200;
+            this.attackCooldown = 600; // 攻速慢
+            this.detectRange = 300;    // 距離長
+            this.speed = G.heroSpeed * 1.1; // 跑快一點點
+        } else if (this.classType === 'mage') {
+            this.maxHp = 150;
+            this.hp = 150;
+            this.attackCooldown = 500;
+            this.detectRange = 180;    // 中距離
+            this.speed = G.heroSpeed;
+        }
+    }
+
     preUpdate(time, delta) {
         super.preUpdate(time, delta); if (this.isDead) return;
         this.hpBarBg.setPosition(this.x, this.y - 30); this.hpBar.setPosition(this.x, this.y - 30);
         if (this.buffTimer > 0) { this.buffTimer -= delta; if (this.buffTimer <= 0) { this.damageMultiplier = 1; this.clearTint(); } }
+        
+        // [新增] 法師被動治療
+        if (this.classType === 'mage') {
+            this.healTimer += delta;
+            if (this.healTimer > 2000) { // 每2秒
+                this.performHealAura();
+                this.healTimer = 0;
+            }
+        }
     }
+    
+    performHealAura() {
+        // 視覺特效
+        const aura = this.scene.add.circle(this.x, this.y, 150, 0x00ff00, 0.2);
+        this.scene.tweens.add({ targets: aura, alpha: 0, scale: 1.2, duration: 500, onComplete: () => aura.destroy() });
+        
+        // 治療自己
+        this.heal(10);
+        // 治療範圍內的士兵
+        squad.children.iterate(s => {
+            if (s && !s.isDead && Phaser.Math.Distance.Between(this.x, this.y, s.x, s.y) < 150) {
+                s.heal(10);
+            }
+        });
+    }
+
     activateBuff() { this.buffTimer = 10000; this.damageMultiplier = 2; this.setTint(0xff0000); }
     move() {
         this.body.setVelocity(0); let vx = 0, vy = 0;
@@ -265,12 +382,25 @@ class Hero extends Phaser.Physics.Arcade.Sprite {
         if (Date.now() - this.lastAttackTime > this.attackCooldown) {
             let target = this.findTarget(enemies, this.detectRange); 
             if (!target) target = this.findTarget(wildLife, this.detectRange);
-            if (!target) target = this.findTarget(neutrals, this.detectRange); // 找中立怪
-            if (target) { let dmg = 25 * this.damageMultiplier; projectiles.add(new MeleeSlash(this.scene, this.x, this.y, target, dmg, false)); this.lastAttackTime = Date.now(); }
+            if (!target) target = this.findTarget(neutrals, this.detectRange);
+            if (target) { 
+                let dmg = 25 * this.damageMultiplier; 
+                // [修改] 根據職業發射不同攻擊
+                if (this.classType === 'warrior') {
+                    projectiles.add(new MeleeSlash(this.scene, this.x, this.y, target, dmg, false)); 
+                } else if (this.classType === 'archer') {
+                    projectiles.add(new Projectile(this.scene, this.x, this.y, target, dmg, false, 500, 1000, 0xffff00));
+                } else if (this.classType === 'mage') {
+                    projectiles.add(new Projectile(this.scene, this.x, this.y, target, dmg * 1.2, false, 350, 1000, 0x00ffff)); // 法師球飛慢點但痛
+                }
+                this.lastAttackTime = Date.now(); 
+            }
         }
     }
     findTarget(group, range) { let target = null; let minDist = range; group.children.iterate(u => { if (u && !u.isDead && u.body) { let d = Phaser.Math.Distance.Between(this.x, this.y, u.x, u.y); if (d < minDist) { minDist = d; target = u; } } }); return target; }
-    takeDamage(amount) { if (this.isDead) return; this.hp -= amount; showDamageText(this.scene, this.x, this.y, amount); const pct = Math.max(0, this.hp / this.maxHp); this.hpBar.width = 40 * pct; if (pct < 0.3) this.hpBar.fillColor = 0xff0000; else if (pct < 0.6) this.hpBar.fillColor = 0xffff00; if (this.hp <= 0) this.die(); }
+    heal(amount) { if (this.isDead || this.hp >= this.maxHp) return; this.hp = Math.min(this.hp + amount, this.maxHp); showDamageText(this.scene, this.x, this.y, `+${amount}`, "#00ff00"); this.updateHpBar(); }
+    takeDamage(amount) { if (this.isDead) return; this.hp -= amount; showDamageText(this.scene, this.x, this.y, amount); this.updateHpBar(); if (this.hp <= 0) this.die(); }
+    updateHpBar() { const pct = Math.max(0, this.hp / this.maxHp); this.hpBar.width = 40 * pct; if (pct < 0.3) this.hpBar.fillColor = 0xff0000; else if (pct < 0.6) this.hpBar.fillColor = 0xffff00; else this.hpBar.fillColor = 0x00ff00; }
     die() { this.isDead = true; this.hpBar.destroy(); this.hpBarBg.destroy(); this.destroy(); endGame(false, "你戰死沙場，革命之火熄滅了。"); }
 }
 
@@ -450,7 +580,7 @@ class TownGuard extends Soldier {
 
 class WanderingChampion extends Unit {
     constructor(scene, x, y) {
-        super(scene, x, y, 32, 32, 0x9932cc, 500, 500); // 紫色
+        super(scene, x, y, 32, 32, 0x9932cc, 500, 500); 
         this.speed = 120;
         this.detectRange = 250;
         this.attackRange = 50;
@@ -500,7 +630,7 @@ class WanderingChampion extends Unit {
             this.isRecruited = true;
             this.isDead = false; 
             this.hp = this.maxHp;
-            this.fillColor = 0xffd700; // 金色
+            this.fillColor = 0xffd700; 
             this.hpBar.fillColor = 0x00ff00;
             this.width = 24; this.height = 24; 
             this.body.setCircle(12);
@@ -568,13 +698,13 @@ class Village {
     executeAction(action) { if (action === 'upgrade') this.upgrade(); else if (action === 'recruit_h') { if(this.recruit('H')) squad.add(new Soldier(this.scene, player.x, player.y)); } else if (action === 'recruit_j') { if(this.recruit('J')) squad.add(new Archer(this.scene, player.x, player.y)); } }
     upgrade() { 
         if (this.level >= 5) return false; 
-        let cost = this.level * 100; 
+        let cost = this.level * G.upgradeCostFactor; 
         if (gold >= cost) { 
             updateGold(-cost); this.level++; this.integrity = 100; this.maxStock = 2 + this.level; this.stock = this.maxStock; 
             this.refreshVisuals(); showToast(this.scene, `${this.name} 升級至 Lv.${this.level}!`, "cyan"); 
             if (this.level === 5) {
                 for(let i=0; i<2; i++) squad.add(new TownGuard(this.scene, this.x + Phaser.Math.Between(-30,30), this.y + Phaser.Math.Between(-30,30), this));
-                for(let i=0; i<2; i++) squad.add(new Archer(this.scene, this.x + Phaser.Math.Between(-30,30), this.y + Phaser.Math.Between(-30,30))); // 簡單加2個弓手
+                for(let i=0; i<2; i++) squad.add(new Archer(this.scene, this.x + Phaser.Math.Between(-30,30), this.y + Phaser.Math.Between(-30,30))); 
                 showToast(this.scene, "駐守衛隊已部署！", "gold");
             }
             return true; 
@@ -582,7 +712,11 @@ class Village {
         return false; 
     }
     downgrade() { this.level = 1; this.integrity = 100; updateRep(-200); showToast(this.scene, `${this.name} 被攻陷了！`, "red"); this.refreshVisuals(); }
-    recruit(type) { if (this.stock <= 0) return false; let cost = (type === 'H') ? 20 : 30; if (gold >= cost) { updateGold(-cost); this.stock--; this.refreshVisuals(); showToast(this.scene, `招募成功 (-$${cost})`, "lime"); return true; } return false; }
+    recruit(type) { 
+        if (this.stock <= 0) return false; 
+        let cost = (type === 'H') ? G.costSoldier : G.costArcher; 
+        if (gold >= cost) { updateGold(-cost); this.stock--; this.refreshVisuals(); showToast(this.scene, `招募成功 (-$${cost})`, "lime"); return true; } return false; 
+    }
     refreshVisuals() { this.statusText.setText(`Lv.${this.level} | ${this.stock}/${this.maxStock}`); let colors = [0x8b4513, 0xcd853f, 0xd2691e, 0xa0522d, 0x800000]; this.building.fillColor = colors[this.level-1] || 0x8b4513; }
 }
 
@@ -593,7 +727,8 @@ class GameDirector {
         this.timers.patrol += delta; this.timers.caravan += delta; this.timers.passive += delta;
         if (this.timers.passive > 1000) { if (permanentBuffs.gold) updateGold(5); if (permanentBuffs.rep) updateRep(2); this.timers.passive = 0; }
         let timeFactor = (300 - gameTimeLeft) / 60; let repFactor = reputation / 500; let difficulty = 1 + (timeFactor * 0.5) + (repFactor * 0.5);
-        let patrolInterval = Math.max(10000, 40000 - (difficulty * 4000));
+        let baseInterval = G.patrolBaseInterval;
+        let patrolInterval = Math.max(10000, baseInterval - (difficulty * 4000));
         if (this.timers.patrol > patrolInterval) { this.spawnPatrol(difficulty); this.timers.patrol = 0; }
         if (this.timers.caravan > 35000) { this.spawnCaravan(difficulty); this.timers.caravan = 0; }
     }
@@ -687,7 +822,7 @@ function create() {
     director = new GameDirector(this);
     
     this.time.addEvent({ delay: 1000, callback: () => {
-        if (!isGameOver) {
+        if (!isGameOver && isGameStarted) {
             gameTimeLeft--;
             let m = Math.floor(gameTimeLeft/60); let s = gameTimeLeft%60;
             document.getElementById('time-display').innerText = `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
@@ -696,13 +831,20 @@ function create() {
     }, loop: true });
     
     joyGraphics = this.add.graphics().setScrollFactor(0).setDepth(999);
-    this.input.on('pointerdown', (pointer) => { if (pointer.y > window.innerHeight - 100 && pointer.x > window.innerWidth - 100) return; joyStick.active = true; joyStick.startX = pointer.x; joyStick.startY = pointer.y; joyStick.currX = pointer.x; joyStick.currY = pointer.y; joyStick.vec.set(0, 0); });
-    this.input.on('pointermove', (pointer) => { if (joyStick.active) { joyStick.currX = pointer.x; joyStick.currY = pointer.y; let dx = pointer.x - joyStick.startX; let dy = pointer.y - joyStick.startY; let dist = Math.sqrt(dx*dx + dy*dy); let maxDist = 50; if (dist > maxDist) { let ratio = maxDist / dist; joyStick.currX = joyStick.startX + dx * ratio; joyStick.currY = joyStick.startY + dy * ratio; } if (dist > 5) joyStick.vec.set(dx, dy).normalize(); else joyStick.vec.set(0, 0); } });
+    this.input.on('pointerdown', (pointer) => { 
+        if(!isGameStarted) return;
+        if (pointer.y > window.innerHeight - 100 && pointer.x > window.innerWidth - 100) return; 
+        joyStick.active = true; joyStick.startX = pointer.x; joyStick.startY = pointer.y; joyStick.currX = pointer.x; joyStick.currY = pointer.y; joyStick.vec.set(0, 0); 
+    });
+    this.input.on('pointermove', (pointer) => { 
+        if (joyStick.active) { joyStick.currX = pointer.x; joyStick.currY = pointer.y; let dx = pointer.x - joyStick.startX; let dy = pointer.y - joyStick.startY; let dist = Math.sqrt(dx*dx + dy*dy); let maxDist = 50; if (dist > maxDist) { let ratio = maxDist / dist; joyStick.currX = joyStick.startX + dx * ratio; joyStick.currY = joyStick.startY + dy * ratio; } if (dist > 5) joyStick.vec.set(dx, dy).normalize(); else joyStick.vec.set(0, 0); } 
+    });
     this.input.on('pointerup', () => { joyStick.active = false; joyStick.vec.set(0, 0); joyGraphics.clear(); });
 }
 
 function update(time, delta) {
-    if (isGameOver) return;
+    if (!isGameStarted || isGameOver) return;
+    
     if (joyStick.active) { joyGraphics.clear(); joyGraphics.lineStyle(2, 0xffffff, 0.5); joyGraphics.strokeCircle(joyStick.startX, joyStick.startY, 50); joyGraphics.fillStyle(0xffffff, 0.8); joyGraphics.fillCircle(joyStick.currX, joyStick.currY, 20); } else joyGraphics.clear();
     player.update();
     director.update(delta);
