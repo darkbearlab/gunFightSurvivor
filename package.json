@@ -1,0 +1,14 @@
+{
+  "name": "gun-fight-survivor",
+  "version": "1.0.0",
+  "description": "A top-down survival shooter game using Phaser 3.",
+  "main": "game.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "darkbearlab",
+  "license": "MIT",
+  "dependencies": {
+    "phaser": "^3.60.0"
+  }
+}
